@@ -60,6 +60,9 @@ pub use multiway_map::{
     MultiwayRangeMapBlaze, MultiwayRangeMapBlazeRef, MultiwaySortedDisjointMap,
 };
 
+mod non_zero_range;
+pub use non_zero_range::NonZeroRange;
+
 mod not_iter;
 pub use not_iter::NotIter;
 
