@@ -1,8 +1,8 @@
-use core::{iter::FusedIterator, ops::RangeInclusive};
+use core::iter::FusedIterator;
 
 use itertools::{Itertools, KMergeBy, MergeBy};
 
-use crate::{Integer, SortedDisjoint, SortedStarts};
+use crate::{Integer, NonZeroRange, SortedDisjoint, SortedStarts};
 
 /// Used internally by `UnionIter` and `SymDiffIter`.
 #[must_use = "iterators are lazy and do nothing unless consumed"]
@@ -14,7 +14,7 @@ where
     R: SortedDisjoint<T>,
 {
     #[allow(clippy::type_complexity)]
-    iter: MergeBy<L, R, fn(&RangeInclusive<T>, &RangeInclusive<T>) -> bool>,
+    iter: MergeBy<L, R, fn(&NonZeroRange<T>, &NonZeroRange<T>) -> bool>,
 }
 
 impl<T, L, R> Merge<T, L, R>
@@ -29,7 +29,7 @@ where
     #[inline]
     pub(crate) fn new(left: L, right: R) -> Self {
         Self {
-            iter: left.merge_by(right, |a, b| a.start() < b.start()),
+            iter: left.merge_by(right, |a, b| a.start < b.start),
         }
     }
 }
@@ -48,7 +48,7 @@ where
     L: SortedDisjoint<T>,
     R: SortedDisjoint<T>,
 {
-    type Item = RangeInclusive<T>;
+    type Item = NonZeroRange<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.next()
@@ -77,10 +77,10 @@ where
     I: SortedDisjoint<T>,
 {
     #[allow(clippy::type_complexity)]
-    iter: KMergeBy<I, fn(&RangeInclusive<T>, &RangeInclusive<T>) -> bool>,
+    iter: KMergeBy<I, fn(&NonZeroRange<T>, &NonZeroRange<T>) -> bool>,
 }
 
-type RangeMergeIter<T, I> = KMergeBy<I, fn(&RangeInclusive<T>, &RangeInclusive<T>) -> bool>;
+type RangeMergeIter<T, I> = KMergeBy<I, fn(&NonZeroRange<T>, &NonZeroRange<T>) -> bool>;
 
 impl<T, I> KMerge<T, I>
 where
@@ -93,7 +93,7 @@ where
     {
         let iter = iter.into_iter();
         // Merge RangeValues by start with ties broken by priority
-        let iter: RangeMergeIter<T, I> = iter.kmerge_by(|a, b| a.start() < b.start());
+        let iter: RangeMergeIter<T, I> = iter.kmerge_by(|a, b| a.start < b.start);
         Self { iter }
     }
 }
@@ -110,7 +110,7 @@ where
     T: Integer,
     I: SortedDisjoint<T>,
 {
-    type Item = RangeInclusive<T>;
+    type Item = NonZeroRange<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.next()

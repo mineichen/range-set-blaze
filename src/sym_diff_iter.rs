@@ -2,8 +2,9 @@ use crate::sym_diff_iter_map::UsizeExtensions;
 use crate::{
     Integer, Merge, SortedDisjoint, SortedStarts, SymDiffKMerge, SymDiffMerge, merge::KMerge,
 };
+use crate::NonZeroRange;
 use alloc::collections::BinaryHeap;
-use core::{cmp::Reverse, iter::FusedIterator, ops::RangeInclusive};
+use core::{cmp::Reverse, iter::FusedIterator};
 
 /// This `struct` is created by the [`symmetric_difference`] method on [`SortedDisjoint`]. See [`symmetric_difference`]'s
 /// documentation for more.
@@ -20,8 +21,8 @@ where
     iter: I,
     start_or_min_value: T,
     end_heap: BinaryHeap<Reverse<T>>,
-    next_again: Option<RangeInclusive<T>>,
-    gather: Option<RangeInclusive<T>>,
+    next_again: Option<NonZeroRange<T>>,
+    gather: Option<NonZeroRange<T>>,
 }
 
 impl<T, I> FusedIterator for SymDiffIter<T, I>
@@ -36,27 +37,27 @@ where
     T: Integer,
     I: SortedStarts<T>,
 {
-    type Item = RangeInclusive<T>;
+    type Item = NonZeroRange<T>;
 
-    fn next(&mut self) -> Option<RangeInclusive<T>> {
+    fn next(&mut self) -> Option<NonZeroRange<T>> {
         loop {
             let count = self.end_heap.len();
             let Some(next_range) = self.next_again.take().or_else(|| self.iter.next()) else {
-                // The workspace is empty and next is empty, so return everything gathered.
                 if count == 0 {
                     return self.gather.take();
                 }
 
-                // The workspace is not empty (but next is empty) is process the next chunk of the workspace.
                 let end = self
                     .end_heap
                     .pop()
                     .expect("Real Assert: the workspace is not empty")
                     .0;
                 self.remove_same_end(end);
-                let result = self.start_or_min_value..=end;
+                let result = unsafe {
+                    NonZeroRange::new_unchecked(self.start_or_min_value..end)
+                };
                 if !self.end_heap.is_empty() {
-                    self.start_or_min_value = end.add_one(); // The 'if' prevents overflow.
+                    self.start_or_min_value = end;
                 }
                 if let Some(result) = self.process(count.is_odd(), result) {
                     return result;
@@ -64,23 +65,22 @@ where
                 continue;
             };
 
-            // Next has the same start as the workspace, so add it to the workspace.
-            // (or the workspace is empty, so add it to the workspace.)
-            let (next_start, next_end) = next_range.into_inner();
+            let (next_start, next_end) = (next_range.start, next_range.end);
             if count == 0 || self.start_or_min_value == next_start {
                 self.start_or_min_value = next_start;
                 self.end_heap.push(Reverse(next_end));
                 continue;
             }
 
-            // Next start inside the workspace's first chunk, so process up to next_start.
             let end = self
                 .end_heap
                 .peek()
                 .expect("Real Assert: The workspace has a first chunk.")
                 .0;
             if next_start <= end {
-                let result = self.start_or_min_value..=next_start.sub_one();
+                let result = unsafe {
+                    NonZeroRange::new_unchecked(self.start_or_min_value..next_start)
+                };
                 self.start_or_min_value = next_start;
                 self.end_heap.push(Reverse(next_end));
                 if let Some(result) = self.process(count.is_odd(), result) {
@@ -89,10 +89,10 @@ where
                 continue;
             }
 
-            // Next start is after the workspaces end, but the workspace contains only one chuck,
-            // so process the workspace and set the workspace to next.
             self.remove_same_end(end);
-            let result = self.start_or_min_value..=end;
+            let result = unsafe {
+                NonZeroRange::new_unchecked(self.start_or_min_value..end)
+            };
             if self.end_heap.is_empty() {
                 self.start_or_min_value = next_start;
                 self.end_heap.push(Reverse(next_end));
@@ -102,14 +102,11 @@ where
                 continue;
             }
 
-            // Next start is after the workspaces end, and the workspace contains more than one chuck,
-            // so process one chunk and then process next
-            self.start_or_min_value = end.add_one();
-            self.next_again = Some(next_start..=next_end);
+            self.start_or_min_value = end;
+            self.next_again = Some(next_range);
             if let Some(result) = self.process(count.is_odd(), result) {
                 return result;
             }
-            // continue;
         }
     }
 }
@@ -135,8 +132,8 @@ where
     fn process(
         &mut self,
         keep: bool,
-        next: RangeInclusive<T>,
-    ) -> Option<Option<RangeInclusive<T>>> {
+        next: NonZeroRange<T>,
+    ) -> Option<Option<NonZeroRange<T>>> {
         if !keep {
             return None;
         }
@@ -144,24 +141,21 @@ where
             self.gather = Some(next);
             return None;
         };
-        // If there is no "next" then return gather if it exists.
 
-        // Take both next and gather apart.
-        let (next_start, next_end) = next.into_inner();
-        let (gather_start, gather_end) = gather.into_inner();
+        let (next_start, next_end) = (next.start, next.end);
+        let (gather_start, gather_end) = (gather.start, gather.end);
 
-        // We can assume gather_end < next_start.
-        debug_assert!(gather_end < next_start); // real assert
+        debug_assert!(gather_end <= next_start); // real assert
 
-        // If they touch, set gather to the union and loop.
-        if gather_end.add_one() == next_start {
-            self.gather = Some(gather_start..=next_end);
+        if gather_end == next_start {
+            self.gather = Some(unsafe {
+                NonZeroRange::new_unchecked(gather_start..next_end)
+            });
             return None;
         }
 
-        // Next is disjoint from gather, so return gather and set gather to next.
-        self.gather = Some(next_start..=next_end);
-        Some(Some(gather_start..=gather_end))
+        self.gather = Some(next);
+        Some(Some(gather))
     }
 
     #[inline]

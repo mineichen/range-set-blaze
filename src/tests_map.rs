@@ -2,8 +2,8 @@
 
 use crate::{
     CheckSortedDisjointMap, DynSortedDisjointMap, Integer, IntersectionIterMap, IntoIterMap,
-    IntoRangeValuesIter, IterMap, KMergeMap, MergeMap, RangeMapBlaze, RangeValuesIter, RangesIter,
-    SymDiffIterMap, UnionIterMap,
+    IntoRangeValuesIter, IterMap, KMergeMap, MergeMap, NonZeroRange, RangeMapBlaze,
+    RangeValuesIter, RangesIter, SymDiffIterMap, UnionIterMap,
     keys::{IntoKeys, Keys},
     sorted_disjoint_map::{Priority, RangeToRangeValueIter},
     unsorted_priority_map::{AssumePrioritySortedStartsMap, UnsortedPriorityMap},
@@ -18,7 +18,6 @@ use core::{
     any::Any,
     fmt::{self, Write as FmtWrite}, // Renamed to avoid conflict with std::fmt::Write
     iter::FusedIterator,
-    ops::RangeInclusive,
     prelude::v1::*,
 };
 use itertools::Itertools;
@@ -35,17 +34,17 @@ fn map_step_by_step() {
     let input = [(1, &s2), (2, &s2), (0, &s1)];
 
     let iter = input.into_iter();
-    let iter = iter.map(|(x, value)| (x..=x, value));
+    let iter = iter.map(|(x, value)| (NonZeroRange::new(x..=x), value));
     let iter = UnsortedPriorityMap::new(iter);
     let vs = format!("{:?}", iter.collect::<Vec<_>>());
     // println!("{vs}");
     assert_eq!(
         vs,
-        r#"[Priority { range_value: (1..=2, "b"), priority_number: 0 }, Priority { range_value: (0..=0, "a"), priority_number: 2 }]"#
+        r#"[Priority { range_value: (1..3, "b"), priority_number: 0 }, Priority { range_value: (0..1, "a"), priority_number: 2 }]"#
     );
 
     let iter = input.into_iter();
-    let iter = iter.map(|(x, value)| (x..=x, value));
+    let iter = iter.map(|(x, value)| (NonZeroRange::new(x..=x), value));
     let iter = UnsortedPriorityMap::new(iter);
     let iter = iter.sorted_by(|a, b| {
         // We sort only by start -- priority is not used until later.
@@ -56,11 +55,11 @@ fn map_step_by_step() {
     // println!("{vs}");
     assert_eq!(
         vs,
-        "[Priority { range_value: (0..=0, \"a\"), priority_number: 2 }, Priority { range_value: (1..=2, \"b\"), priority_number: 0 }]"
+        "[Priority { range_value: (0..1, \"a\"), priority_number: 2 }, Priority { range_value: (1..3, \"b\"), priority_number: 0 }]"
     );
 
     let iter = input.into_iter();
-    let iter = iter.map(|(x, value)| (x..=x, value));
+    let iter = iter.map(|(x, value)| (NonZeroRange::new(x..=x), value));
     let iter = UnsortedPriorityMap::new(iter);
     let iter = iter.sorted_by(|a, b| {
         // We sort only by start -- priority is not used until later.
@@ -70,14 +69,14 @@ fn map_step_by_step() {
     let iter = UnionIterMap::new(iter);
     let vs = format!("{:?}", iter.collect::<Vec<_>>());
     // println!("{vs}");
-    assert_eq!(vs, "[(0..=0, \"a\"), (1..=2, \"b\")]");
+    assert_eq!(vs, "[(0..1, \"a\"), (1..3, \"b\")]");
 
     let range_map_blaze = RangeMapBlaze::<u8, String>::from_iter(input);
     // println!("{range_map_blaze}");
-    assert_eq!(range_map_blaze.to_string(), r#"(0..=0, "a"), (1..=2, "b")"#);
+    assert_eq!(range_map_blaze.to_string(), r#"(0..1, "a"), (1..3, "b")"#);
 }
 
-fn format_range_values<'a, T>(iter: impl Iterator<Item = (RangeInclusive<T>, &'a u8)>) -> String
+fn format_range_values<'a, T>(iter: impl Iterator<Item = (NonZeroRange<T>, &'a u8)>) -> String
 where
     T: Integer + fmt::Display + 'a, // Assuming T implements Display for formatting
                                     // V: ValueOwned + fmt::Display + 'a, // V must implement Display to be formatted with {}
@@ -104,7 +103,7 @@ fn map_repro_206() {
     }
 
     let iter = input.clone().into_iter();
-    let iter = iter.map(|(x, value)| (x..=x, value));
+    let iter = iter.map(|(x, value)| (NonZeroRange::new(x..=x), value));
 
     let iter = UnsortedPriorityMap::new(iter);
     let iter = iter.sorted_by(|a, b| {
@@ -118,13 +117,13 @@ fn map_repro_206() {
     // println!("{vs}");
     assert_eq!(
         vs,
-        "1..=2c 7..=7c 12..=12c 13..=13b 14..=14c 16..=16c 17..=18a 19..=19d 21..=22b 23..=23a 24..=24d 26..=26a 27..=27e 29..=29e 31..=31d 32..=32c 35..=35b 37..=37e 38..=39c 42..=42a 43..=43e 46..=46b 47..=47e 49..=49e 55..=55d 58..=58a 59..=59b 63..=63d 70..=70c 73..=73d 77..=77a 79..=79b 81..=81a 83..=83e 84..=84a 86..=86a 88..=88d 90..=90d 97..=97a 98..=98c 99..=99e 100..=100b 101..=101c 102..=102d 104..=104d 113..=113e 114..=114a 115..=115b 117..=117e 120..=120d 121..=121a 123..=124b 125..=125d 126..=126a 127..=127e 128..=128a 129..=129d 131..=131b 132..=132d 137..=137e 139..=139d 140..=140a 143..=143c 145..=145b 147..=147b 148..=148a 150..=150c 151..=151a 152..=152c 153..=153e 155..=155e 164..=164b 165..=166a 168..=168e 173..=174e 175..=175d 177..=177e 183..=183d 185..=185d 186..=186b 189..=189e 190..=190c 193..=193e 194..=195c 196..=196a 198..=198a 199..=199c 201..=201c 203..=203d 204..=206b 208..=208c 209..=209e 210..=210d 213..=213a 214..=214d 219..=219d 220..=220e 223..=223d 225..=225a 227..=228d 229..=229a 234..=234e 235..=235c 238..=238d 239..=239a 240..=240b 242..=242a 251..=251b 253..=253e "
+        "1..3c 7..8c 12..13c 13..14b 14..15c 16..17c 17..19a 19..20d 21..23b 23..24a 24..25d 26..27a 27..28e 29..30e 31..32d 32..33c 35..36b 37..38e 38..40c 42..43a 43..44e 46..47b 47..48e 49..50e 55..56d 58..59a 59..60b 63..64d 70..71c 73..74d 77..78a 79..80b 81..82a 83..84e 84..85a 86..87a 88..89d 90..91d 97..98a 98..99c 99..100e 100..101b 101..102c 102..103d 104..105d 113..114e 114..115a 115..116b 117..118e 120..121d 121..122a 123..125b 125..126d 126..127a 127..128e 128..129a 129..130d 131..132b 132..133d 137..138e 139..140d 140..141a 143..144c 145..146b 147..148b 148..149a 150..151c 151..152a 152..153c 153..154e 155..156e 164..165b 165..167a 168..169e 173..175e 175..176d 177..178e 183..184d 185..186d 186..187b 189..190e 190..191c 193..194e 194..196c 196..197a 198..199a 199..200c 201..202c 203..204d 204..207b 208..209c 209..210e 210..211d 213..214a 214..215d 219..220d 220..221e 223..224d 225..226a 227..229d 229..230a 234..235e 235..236c 238..239d 239..240a 240..241b 242..243a 251..252b 253..254e "
     );
 
     // let range_map_blaze = RangeMapBlaze::<u8, u8>::from_iter(input.clone());
     // assert_eq!(
     //     range_map_blaze.to_string(),
-    //     "(97..=97, 101), (98..=98, 99), (100..=100, 101), (106..=106, 98)"
+    //     "(97..98, 101), (98..99, 99), (100..101, 101), (106..107, 98)"
     // );
 }
 
@@ -141,7 +140,7 @@ fn map_repro_106() {
     }
 
     let iter = input.clone().into_iter();
-    let iter = iter.map(|(x, value)| (x..=x, value));
+    let iter = iter.map(|(x, value)| (NonZeroRange::new(x..=x), value));
     let iter = UnsortedPriorityMap::new(iter);
     let iter = iter.sorted_by(|a, b| {
         // We sort only by start -- priority is not used until later.
@@ -151,12 +150,12 @@ fn map_repro_106() {
     let iter = UnionIterMap::new(iter);
     let vs = format_range_values(iter);
     // println!("{vs}");
-    assert_eq!(vs, "97..=97e 98..=98c 100..=100e 106..=106b ");
+    assert_eq!(vs, "97..98e 98..99c 100..101e 106..107b ");
 
     let range_map_blaze = RangeMapBlaze::<u8, u8>::from_iter(input.clone());
     assert_eq!(
         range_map_blaze.to_string(),
-        "(97..=97, 101), (98..=98, 99), (100..=100, 101), (106..=106, 98)"
+        "(97..98, 101), (98..99, 99), (100..101, 101), (106..107, 98)"
     );
 }
 
@@ -169,13 +168,13 @@ fn map_repro1() {
     // println!("{range_map_blaze}");
     assert_eq!(
         range_map_blaze.to_string(),
-        r#"(20..=21, "a"), (24..=29, "b")"#
+        r#"(20..22, "a"), (24..30, "b")"#
     );
     range_map_blaze.internal_add(25..=25, &s3);
     // println!("{range_map_blaze}");
     assert_eq!(
         range_map_blaze.to_string(),
-        r#"(20..=21, "a"), (24..=24, "b"), (25..=25, "c"), (26..=29, "b")"#
+        r#"(20..22, "a"), (24..25, "b"), (25..26, "c"), (26..30, "b")"#
     );
 }
 
@@ -199,8 +198,8 @@ fn test_coverage_9() {
 #[test]
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn test_eq_priority() {
-    let a = Priority::new((1..=2, &"a"), 1);
-    let b = Priority::new((1..=2, &"a"), 0);
+    let a = Priority::new((NonZeroRange::new(1..=2), &"a"), 1);
+    let b = Priority::new((NonZeroRange::new(1..=2), &"a"), 0);
     assert!(a != b);
 }
 
@@ -282,7 +281,7 @@ const fn check_traits() {
     type BCheckSortedDisjointMap<'a> = CheckSortedDisjointMap<
         i32,
         &'a u64,
-        core::array::IntoIter<(RangeInclusive<i32>, &'a u64), 0>,
+        core::array::IntoIter<(NonZeroRange<i32>, &'a u64), 0>,
     >;
     is_like_check_sorted_disjoint_map::<BCheckSortedDisjointMap<'_>>();
 
@@ -417,7 +416,7 @@ fn test_union_2() {
         let a = create(*a_len, 'A', 'a');
         for b_len in &len_list {
             let b = create(*b_len, 'B', 'b');
-            let c0: RangeMapBlaze<u32, char> = a.range_values().chain(b.range_values()).collect();
+            let c0: RangeMapBlaze<u32, char> = a.range_values().chain(b.range_values()).map(|(r, v)| (r.start..=r.end.sub_one(), v)).collect();
             let c1 = a.clone() | b.clone();
             assert_eq!(c0, c1);
             let mut c2 = a.clone();
@@ -427,10 +426,10 @@ fn test_union_2() {
             c3 |= b.clone();
             assert_eq!(c0, c3);
             let mut c4 = a.clone();
-            c4.extend_simple(b.range_values().map(|(r, v)| (r, *v)));
+            c4.extend_simple(b.range_values().map(|(r, v)| (r.start..=r.end.sub_one(), *v)));
             assert_eq!(c0, c4);
             let mut c5 = a.clone();
-            c5.extend(b.range_values().map(|(r, v)| (r, *v)));
+            c5.extend(b.range_values().map(|(r, v)| (r.start..=r.end.sub_one(), *v)));
             assert_eq!(c0, c5);
             // extend_with and extend_from
             let mut c6 = a.clone();

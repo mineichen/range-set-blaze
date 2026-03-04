@@ -1,6 +1,6 @@
-use core::{iter::FusedIterator, ops::RangeInclusive};
+use core::iter::FusedIterator;
 
-use crate::{Integer, SortedDisjoint};
+use crate::{Integer, NonZeroRange, SortedDisjoint};
 use alloc::boxed::Box;
 
 /// Gives [`SortedDisjoint`] iterators a uniform type. Used by the [`union_dyn`], etc. macros to give all
@@ -15,7 +15,7 @@ use alloc::boxed::Box;
 /// use range_set_blaze::prelude::*;
 ///
 /// let a = RangeSetBlaze::from_iter([1..=6, 8..=9, 11..=15]);
-/// let b = CheckSortedDisjoint::new([5..=13, 18..=29]);
+/// let b = CheckSortedDisjoint::new([NonZeroRange::new(5..=13), NonZeroRange::new(18..=29)]);
 /// let c = RangeSetBlaze::from_iter([38..=42]);
 /// let union = [
 ///     DynSortedDisjoint::new(a.ranges()),
@@ -23,7 +23,7 @@ use alloc::boxed::Box;
 ///     DynSortedDisjoint::new(c.ranges()),
 /// ]
 /// .union();
-/// assert_eq!(union.into_string(), "1..=15, 18..=29, 38..=42");
+/// assert_eq!(union.into_string(), "1..16, 18..30, 38..43");
 /// ```
 #[must_use = "iterators are lazy and do nothing unless consumed"]
 pub struct DynSortedDisjoint<'a, T: Integer> {
@@ -48,7 +48,7 @@ impl<'a, T: Integer> DynSortedDisjoint<'a, T> {
 impl<T: Integer> FusedIterator for DynSortedDisjoint<'_, T> {}
 
 impl<T: Integer> Iterator for DynSortedDisjoint<'_, T> {
-    type Item = RangeInclusive<T>;
+    type Item = NonZeroRange<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.next()
@@ -74,12 +74,12 @@ impl<T: Integer> Iterator for DynSortedDisjoint<'_, T> {
 /// use range_set_blaze::prelude::*;
 ///
 /// let a = RangeSetBlaze::from_iter([1u8..=6, 8..=9, 11..=15]);
-/// let b = CheckSortedDisjoint::new([5..=13, 18..=29]);
+/// let b = CheckSortedDisjoint::new([NonZeroRange::new(5..=13), NonZeroRange::new(18..=29)]);
 /// let c = RangeSetBlaze::from_iter([38..=42]);
 /// let not_c = !c.ranges();
 ///
 /// let intersection = intersection_dyn!(a.ranges(), b, not_c);
-/// assert_eq!(intersection.into_string(), "5..=6, 8..=9, 11..=13");
+/// assert_eq!(intersection.into_string(), "5..7, 8..10, 11..14");
 /// ```
 #[macro_export]
 macro_rules! intersection_dyn {
@@ -101,10 +101,10 @@ macro_rules! intersection_dyn {
 /// use range_set_blaze::prelude::*;
 ///
 /// let a = RangeSetBlaze::from_iter([1..=6, 8..=9, 11..=15]);
-/// let b = CheckSortedDisjoint::new([5..=13, 18..=29]);
+/// let b = CheckSortedDisjoint::new([NonZeroRange::new(5..=13), NonZeroRange::new(18..=29)]);
 /// let c = RangeSetBlaze::from_iter([38..=42]);
 /// let union = union_dyn!(a.ranges(), b, c.ranges());
-/// assert_eq!(union.into_string(), "1..=15, 18..=29, 38..=42");
+/// assert_eq!(union.into_string(), "1..16, 18..30, 38..43");
 /// ```
 #[macro_export]
 macro_rules! union_dyn {
@@ -128,10 +128,10 @@ macro_rules! union_dyn {
 /// use range_set_blaze::prelude::*;
 ///
 /// let a = RangeSetBlaze::from_iter([1..=6, 8..=9, 11..=15]);
-/// let b = CheckSortedDisjoint::new([5..=13, 18..=29]);
+/// let b = CheckSortedDisjoint::new([NonZeroRange::new(5..=13), NonZeroRange::new(18..=29)]);
 /// let c = RangeSetBlaze::from_iter([38..=42]);
 /// let sym_diff = symmetric_difference_dyn!(a.ranges(), b, c.ranges());
-/// assert_eq!(sym_diff.into_string(), "1..=4, 7..=7, 10..=10, 14..=15, 18..=29, 38..=42");
+/// assert_eq!(sym_diff.into_string(), "1..5, 7..8, 10..11, 14..16, 18..30, 38..43");
 /// ```
 #[macro_export]
 macro_rules! symmetric_difference_dyn {

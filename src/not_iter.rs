@@ -1,6 +1,6 @@
-use core::{iter::FusedIterator, ops::RangeInclusive};
+use core::iter::FusedIterator;
 
-use crate::{Integer, SortedDisjoint};
+use crate::{Integer, NonZeroRange, SortedDisjoint};
 
 /// The output of [`SortedDisjoint::complement`] and [`SortedDisjointMap::complement_with`].
 ///
@@ -25,7 +25,7 @@ where
     #[inline]
     pub(crate) fn new<J>(iter: J) -> Self
     where
-        J: IntoIterator<Item = RangeInclusive<T>, IntoIter = I>,
+        J: IntoIterator<Item = NonZeroRange<T>, IntoIter = I>,
     {
         Self {
             iter: iter.into_iter(),
@@ -51,36 +51,40 @@ where
     T: Integer,
     I: SortedDisjoint<T>,
 {
-    type Item = RangeInclusive<T>;
-    fn next(&mut self) -> Option<RangeInclusive<T>> {
+    type Item = NonZeroRange<T>;
+    fn next(&mut self) -> Option<NonZeroRange<T>> {
         debug_assert!(T::min_value() <= T::max_value()); // real assert
         if self.next_time_return_none {
             return None;
         }
         let next_item = self.iter.next();
         if let Some(range) = next_item {
-            let (start, end) = range.into_inner();
-            debug_assert!(start <= end);
+            let (start, end) = (range.start, range.end);
+            debug_assert!(start < end);
             if self.start_not < start {
-                // We can subtract with underflow worry because
-                // we know that start > start_not and so not min_value
-                let result = Some(self.start_not..=start.sub_one());
-                if end < T::max_value() {
-                    self.start_not = end.add_one();
-                } else {
-                    self.next_time_return_none = true;
-                }
+                let result =
+                    Some(unsafe { NonZeroRange::new_unchecked(self.start_not..start) });
+                self.start_not = end;
                 result
-            } else if end < T::max_value() {
-                self.start_not = end.add_one();
-                self.next() // will recurse at most once
             } else {
-                self.next_time_return_none = true;
-                None
+                self.start_not = end;
+                self.next() // will recurse at most once
             }
         } else {
             self.next_time_return_none = true;
-            Some(self.start_not..=T::max_value())
+            if let Some(end) = T::max_value().checked_add_one() {
+                if self.start_not <= T::max_value() {
+                    Some(unsafe { NonZeroRange::new_unchecked(self.start_not..end) })
+                } else {
+                    None
+                }
+            } else if self.start_not < T::max_value() {
+                Some(unsafe {
+                    NonZeroRange::new_unchecked(self.start_not..T::max_value())
+                })
+            } else {
+                None
+            }
         }
     }
 

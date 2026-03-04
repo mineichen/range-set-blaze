@@ -4,8 +4,8 @@ use crate::sorted_disjoint_map::{Priority, PrioritySortedStartsMap};
 use crate::{AssumeSortedStarts, MergeMap, SortedDisjointMap, UnionKMergeMap, UnionMergeMap};
 use alloc::{collections::BinaryHeap, vec};
 use core::cmp::min;
+use crate::NonZeroRange;
 use core::iter::FusedIterator;
-use core::ops::RangeInclusive;
 use itertools::Itertools;
 
 use crate::Integer;
@@ -15,7 +15,7 @@ use crate::unsorted_priority_map::UnsortedPriorityMap;
 type SortedStartsInVecMap<T, VR> =
     AssumePrioritySortedStartsMap<T, VR, vec::IntoIter<Priority<T, VR>>>;
 #[allow(clippy::redundant_pub_crate)]
-pub(crate) type SortedStartsInVec<T> = AssumeSortedStarts<T, vec::IntoIter<RangeInclusive<T>>>;
+pub(crate) type SortedStartsInVec<T> = AssumeSortedStarts<T, vec::IntoIter<NonZeroRange<T>>>;
 
 /// This `struct` is created by the [`union`] method. See [`union`]'s
 /// documentation for more.
@@ -32,8 +32,8 @@ where
     iter: SS,
     next_item: Option<Priority<T, VR>>,
     workspace: BinaryHeap<Priority<T, VR>>,
-    gather: Option<(RangeInclusive<T>, VR)>,
-    ready_to_go: Option<(RangeInclusive<T>, VR)>,
+    gather: Option<(NonZeroRange<T>, VR)>,
+    ready_to_go: Option<(NonZeroRange<T>, VR)>,
 }
 
 impl<T, VR, I> Iterator for UnionIterMap<T, VR, I>
@@ -42,100 +42,87 @@ where
     VR: ValueRef,
     I: PrioritySortedStartsMap<T, VR>,
 {
-    type Item = (RangeInclusive<T>, VR);
+    type Item = (NonZeroRange<T>, VR);
 
-    fn next(&mut self) -> Option<(RangeInclusive<T>, VR)> {
-        // Keep doing this until we have something to return.
+    fn next(&mut self) -> Option<(NonZeroRange<T>, VR)> {
         loop {
             if let Some(value) = self.ready_to_go.take() {
-                // If ready_to_go is Some, return the value immediately.
                 return Some(value);
             }
 
-            // if self.next_item should go into the workspace, then put it there, get the next, next_item, and loop
             if let Some(next_item) = self.next_item.take() {
                 let (next_start, next_end) = next_item.start_and_end();
 
-                // If workspace is empty, just push the next item
                 let Some(best) = self.workspace.peek() else {
                     self.workspace.push(next_item);
                     self.next_item = self.iter.next();
-                    continue; // return to top of the main processing loop
+                    continue;
                 };
-                // LATER: Could add this special case: If next value is the same as best value and the ending is later, and the start overlaps/touches, then just extend the best value.
                 if next_start == best.start() {
-                    // Only push if the priority is better or the end is greater
                     if &next_item > best || next_end > best.end() {
                         self.workspace.push(next_item);
                     }
                     self.next_item = self.iter.next();
-                    continue; // return to top of the main processing loop
+                    continue;
                 }
 
-                // It does not go into the workspace, so just hold it and keep processing.
                 self.next_item = Some(next_item);
             }
 
-            // If the workspace is empty, we are done.
             let Some(best) = self.workspace.peek() else {
                 debug_assert!(self.next_item.is_none());
                 debug_assert!(self.ready_to_go.is_none());
                 return self.gather.take();
             };
 
-            // We buffer for output the best item up to the start of the next item (if any).
-
-            // Find the start of the next item, if any.
             let next_end = self.next_item.as_ref().map_or_else(
                 || best.end(),
-                |next_item| min(next_item.start().sub_one(), best.end()),
+                |next_item| min(next_item.start(), best.end()),
             );
 
-            // Add the front of best to the gather buffer.
             if let Some(mut gather) = self.gather.take() {
                 if gather.1.borrow() == best.value().borrow()
-                    && (*gather.0.end()).add_one() == best.start()
+                    && gather.0.end == best.start()
                 {
-                    // if the gather is contiguous with the best, then merge them
-                    gather.0 = *gather.0.start()..=next_end;
+                    gather.0 = unsafe {
+                        NonZeroRange::new_unchecked(gather.0.start..next_end)
+                    };
                     self.gather = Some(gather);
                 } else {
-                    // if the gather is not contiguous with the best, then output the gather and set the gather to the best
                     self.ready_to_go = Some(gather);
-                    self.gather = Some((best.start()..=next_end, best.value().clone()));
+                    self.gather = Some((
+                        unsafe { NonZeroRange::new_unchecked(best.start()..next_end) },
+                        best.value().clone(),
+                    ));
                 }
             } else {
-                // if there is no gather, then set the gather to the best
-                self.gather = Some((best.start()..=next_end, best.value().clone()));
+                self.gather = Some((
+                    unsafe { NonZeroRange::new_unchecked(best.start()..next_end) },
+                    best.value().clone(),
+                ));
             }
 
-            // We also update the workspace to removing any items that are completely covered by the new_start.
-            // We also don't need to keep any items that have a lower priority and are shorter than the new best.
             let mut new_workspace = BinaryHeap::new();
             while let Some(item) = self.workspace.pop() {
                 let mut item = item;
                 if item.end() <= next_end {
-                    // too short, don't keep
-                    continue; // while loop
+                    continue;
                 }
-                item.set_range(next_end.add_one()..=item.end());
+                item.set_range(unsafe {
+                    NonZeroRange::new_unchecked(next_end..item.end())
+                });
                 let Some(new_best) = new_workspace.peek() else {
-                    // new_workspace is empty, so keep
                     new_workspace.push(item);
-                    continue; // while loop
+                    continue;
                 };
                 if &item < new_best && item.end() <= new_best.end() {
-                    // item.priority, item.0, new_best.priority, new_best.0);
-                    // not as good as new_best, and shorter, so don't keep
-                    continue; // while loop
+                    continue;
                 }
 
-                // higher priority or longer, so keep
-                // item.priority, item.0, new_best.priority, new_best.0);
                 new_workspace.push(item);
             }
             self.workspace = new_workspace;
-        } // end of main loop
+        }
     }
 }
 
@@ -189,7 +176,7 @@ where
 }
 
 // UnionIterMap from iter (T, VR)
-impl<T, VR> FromIterator<(RangeInclusive<T>, VR)>
+impl<T, VR> FromIterator<(NonZeroRange<T>, VR)>
     for UnionIterMap<T, VR, SortedStartsInVecMap<T, VR>>
 where
     T: Integer,
@@ -197,7 +184,7 @@ where
 {
     fn from_iter<I>(iter: I) -> Self
     where
-        I: IntoIterator<Item = (RangeInclusive<T>, VR)>,
+        I: IntoIterator<Item = (NonZeroRange<T>, VR)>,
     {
         let iter = iter.into_iter();
         let iter = UnsortedPriorityMap::new(iter);

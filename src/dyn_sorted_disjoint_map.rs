@@ -1,6 +1,6 @@
-use core::{iter::FusedIterator, ops::RangeInclusive};
+use core::iter::FusedIterator;
 
-use crate::{Integer, SortedDisjointMap, map::ValueRef};
+use crate::{Integer, NonZeroRange, SortedDisjointMap, map::ValueRef};
 use alloc::boxed::Box;
 
 /// Gives [`SortedDisjointMap`] iterators a uniform type. Used by the [`union_map_dyn`], etc. macros to give all
@@ -15,14 +15,14 @@ use alloc::boxed::Box;
 /// use range_set_blaze::prelude::*;
 ///
 /// let a = RangeMapBlaze::from_iter([(38..=42, "a")]);
-/// let b = CheckSortedDisjointMap::new([(5..=13, &"b"), (18..=29, &"b")]);
+/// let b = CheckSortedDisjointMap::new([(NonZeroRange::new(5..=13), &"b"), (NonZeroRange::new(18..=29), &"b")]);
 /// let c = RangeMapBlaze::from_iter([(1..=6, "c"), (8..=9, "c"), (11..=15, "c")]);
 /// let union = [
 ///     DynSortedDisjointMap::new(a.range_values()),
 ///     DynSortedDisjointMap::new(b),
 ///     DynSortedDisjointMap::new(c.range_values()),
 /// ].union();
-/// assert_eq!(union.into_string(), r#"(1..=6, "c"), (7..=7, "b"), (8..=9, "c"), (10..=10, "b"), (11..=15, "c"), (18..=29, "b"), (38..=42, "a")"#);
+/// assert_eq!(union.into_string(), r#"(1..7, "c"), (7..8, "b"), (8..10, "c"), (10..11, "b"), (11..16, "c"), (18..30, "b"), (38..43, "a")"#);
 /// ```
 #[must_use = "iterators are lazy and do nothing unless consumed"]
 pub struct DynSortedDisjointMap<'a, T, VR>
@@ -69,7 +69,7 @@ where
     T: Integer,
     VR: ValueRef,
 {
-    type Item = (RangeInclusive<T>, VR);
+    type Item = (NonZeroRange<T>, VR);
 
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.next()
@@ -97,10 +97,10 @@ where
 /// use range_set_blaze::prelude::*;
 ///
 /// let a = RangeMapBlaze::from_iter([(2..=2, "a"), (6..=200, "a")]);
-/// let b = CheckSortedDisjointMap::new([(2..=6, &"b")]);
+/// let b = CheckSortedDisjointMap::new([(NonZeroRange::new(2..=6), &"b")]);
 /// let c = RangeMapBlaze::from_iter([(1..=2, "c"), (5..=100, "c")]);
 /// let intersection = intersection_map_dyn!(a.range_values(), b, c.range_values());
-/// assert_eq!(intersection.into_string(), r#"(2..=2, "c"), (6..=6, "c")"#);
+/// assert_eq!(intersection.into_string(), r#"(2..3, "c"), (6..7, "c")"#);
 /// ```
 #[macro_export]
 macro_rules! intersection_map_dyn {
@@ -124,10 +124,10 @@ macro_rules! intersection_map_dyn {
 /// use range_set_blaze::prelude::*;
 ///
 /// let a = RangeMapBlaze::from_iter([(2..=2, "a"), (6..=200, "a")]);
-/// let b = CheckSortedDisjointMap::new([(2..=6, &"b")]);
+/// let b = CheckSortedDisjointMap::new([(NonZeroRange::new(2..=6), &"b")]);
 /// let c = RangeMapBlaze::from_iter([(1..=2, "c"), (5..=100, "c")]);
 /// let union = union_map_dyn!(a.range_values(), b, c.range_values());
-/// assert_eq!(union.into_string(), r#"(1..=2, "c"), (3..=4, "b"), (5..=100, "c"), (101..=200, "a")"#);
+/// assert_eq!(union.into_string(), r#"(1..3, "c"), (3..5, "b"), (5..101, "c"), (101..201, "a")"#);
 /// ```
 #[macro_export]
 macro_rules! union_map_dyn {
@@ -153,10 +153,10 @@ macro_rules! union_map_dyn {
 /// use range_set_blaze::prelude::*;
 ///
 /// let a = RangeMapBlaze::from_iter([(2..=2, "a"), (6..=200, "a")]);
-/// let b = CheckSortedDisjointMap::new([(2..=6, &"b")]);
+/// let b = CheckSortedDisjointMap::new([(NonZeroRange::new(2..=6), &"b")]);
 /// let c = RangeMapBlaze::from_iter([(1..=2, "c"), (5..=100, "c")]);
 /// let sym_diff = symmetric_difference_map_dyn!(a.range_values(), b, c.range_values());
-/// assert_eq!(sym_diff.into_string(), r#"(1..=2, "c"), (3..=4, "b"), (6..=6, "c"), (101..=200, "a")"#);
+/// assert_eq!(sym_diff.into_string(), r#"(1..3, "c"), (3..5, "b"), (6..7, "c"), (101..201, "a")"#);
 /// ```
 #[macro_export]
 macro_rules! symmetric_difference_map_dyn {

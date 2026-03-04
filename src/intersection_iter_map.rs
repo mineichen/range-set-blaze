@@ -1,11 +1,10 @@
 use core::{
     cmp::{max, min},
     iter::FusedIterator,
-    ops::RangeInclusive,
 };
 
 use crate::Integer;
-use crate::{SortedDisjoint, SortedDisjointMap, map::ValueRef};
+use crate::{NonZeroRange, SortedDisjoint, SortedDisjointMap, map::ValueRef};
 
 /// This `struct` is created by the [`intersection`] and [`map_and_set_intersection`] methods on [`SortedDisjointMap`].
 /// See the methods' documentation for more.
@@ -24,8 +23,8 @@ where
 {
     iter_left: IM,
     iter_right: IS,
-    right: Option<RangeInclusive<T>>,
-    left: Option<(RangeInclusive<T>, VR)>,
+    right: Option<NonZeroRange<T>>,
+    left: Option<(NonZeroRange<T>, VR)>,
 }
 
 impl<T, VR, IM, IS> IntersectionIterMap<T, VR, IM, IS>
@@ -66,67 +65,54 @@ where
     IM: SortedDisjointMap<T, VR>,
     IS: SortedDisjoint<T>,
 {
-    type Item = (RangeInclusive<T>, VR);
+    type Item = (NonZeroRange<T>, VR);
 
-    fn next(&mut self) -> Option<(RangeInclusive<T>, VR)> {
-        // println!("begin next");
+    fn next(&mut self) -> Option<(NonZeroRange<T>, VR)> {
         loop {
-            // Be sure both currents are loaded.
             self.left = self.left.take().or_else(|| self.iter_left.next());
             self.right = self.right.take().or_else(|| self.iter_right.next());
 
-            // If either is still none, we are done.
             let (Some(left), Some(right)) = (self.left.take(), self.right.take()) else {
                 return None;
             };
             let (left_range, left_value) = left;
-            let (left_start, left_end) = left_range.clone().into_inner();
-            let (right_start, right_end) = right.into_inner();
-            // println!("{:?} {:?}", current_range, current_range_value.0);
+            let (left_start, left_end) = (left_range.start, left_range.end);
+            let (right_start, right_end) = (right.start, right.end);
 
-            // if current_range ends before current_range_value, clear it and loop for a new value.
-            if right_end < left_start {
-                // println!("getting new range");
+            if right_end <= left_start {
                 self.right = None;
                 self.left = Some((left_range, left_value));
                 continue;
             }
 
-            // if current_range_value ends before current_range, clear it and loop for a new value.
-            if left_end < right_start {
-                // println!("getting new range value");
-                self.right = Some(RangeInclusive::new(right_start, right_end));
+            if left_end <= right_start {
+                self.right = Some(right);
                 self.left = None;
                 continue;
             }
 
-            // Thus, they overlap
             let start = max(right_start, left_start);
             let end = min(right_end, left_end);
 
-            // Modified logic: Now prioritize right range boundaries instead of left
             let value = if left_end != end {
-                // right_end != end, left_end != end is impossible
                 debug_assert!(right_end == end);
 
-                // right_end == end, left_end != end
                 let value = left_value.clone();
                 self.right = None;
                 self.left = Some((left_range, left_value));
                 value
             } else if right_end == end {
-                // right_end == end, left_end == end
                 self.left = None;
                 self.right = None;
                 left_value
             } else {
-                // right_end != end, left_end == end
-                self.right = Some(RangeInclusive::new(right_start, right_end));
+                self.right = Some(right);
                 self.left = None;
                 left_value
             };
 
-            let range_value = (start..=end, value);
+            let range_value =
+                (unsafe { NonZeroRange::new_unchecked(start..end) }, value);
             return Some(range_value);
         }
     }

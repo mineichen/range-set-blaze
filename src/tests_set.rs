@@ -9,7 +9,7 @@ use alloc::{string::ToString, vec::Vec};
 use core::{
     array,
     cmp::Ordering,
-    ops::{Bound, RangeInclusive},
+    ops::Bound,
 };
 use num_traits::{One, Zero};
 #[cfg(not(target_arch = "wasm32"))]
@@ -362,86 +362,86 @@ fn lib_coverage_5() {
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 #[allow(clippy::cognitive_complexity, clippy::iter_on_empty_collections)]
 fn sdi1() {
-    let a = [157..=158, 158..=158].into_iter();
+    let a = [157..=158, 158..=158].map(NonZeroRange::new).into_iter();
     let a = AssumeSortedStarts::new(a);
     let mut iter = SymDiffIter::new(a);
-    assert_eq!(iter.next(), Some(157..=157));
+    assert_eq!(iter.next(), Some(NonZeroRange::new(157..=157)));
     assert_eq!(iter.next(), None);
 
-    let a = [0..=0, 0..=0, 0..=1, 2..=100].into_iter();
+    let a = [0..=0, 0..=0, 0..=1, 2..=100].map(NonZeroRange::new).into_iter();
     let a = AssumeSortedStarts::new(a);
     let mut iter = SymDiffIter::new(a);
-    assert_eq!(iter.next(), Some(0..=100));
+    assert_eq!(iter.next(), Some(NonZeroRange::new(0..=100)));
     assert_eq!(iter.next(), None);
 
-    let a = [0..=0, 0..=1, 2..=100].into_iter();
+    let a = [0..=0, 0..=1, 2..=100].map(NonZeroRange::new).into_iter();
     let a = AssumeSortedStarts::new(a);
     let mut iter = SymDiffIter::new(a);
-    assert_eq!(iter.next(), Some(1..=100));
+    assert_eq!(iter.next(), Some(NonZeroRange::new(1..=100)));
     assert_eq!(iter.next(), None);
 
-    let a = [0..=0, 0..=0, 2..=100].into_iter();
+    let a = [0..=0, 0..=0, 2..=100].map(NonZeroRange::new).into_iter();
     let a = AssumeSortedStarts::new(a);
     let mut iter = SymDiffIter::new(a);
-    assert_eq!(iter.next(), Some(2..=100));
+    assert_eq!(iter.next(), Some(NonZeroRange::new(2..=100)));
     assert_eq!(iter.next(), None);
 
-    let a = [0..=0, 0..=0, 0..=0, 2..=100].into_iter();
+    let a = [0..=0, 0..=0, 0..=0, 2..=100].map(NonZeroRange::new).into_iter();
     let a = AssumeSortedStarts::new(a);
     let mut iter = SymDiffIter::new(a);
-    assert_eq!(iter.next(), Some(0..=0));
-    assert_eq!(iter.next(), Some(2..=100));
+    assert_eq!(iter.next(), Some(NonZeroRange::new(0..=0)));
+    assert_eq!(iter.next(), Some(NonZeroRange::new(2..=100)));
     assert_eq!(iter.next(), None);
     {
-        let a = [0..=1, 0..=0].into_iter();
+        let a = [0..=1, 0..=0].map(NonZeroRange::new).into_iter();
         let a = AssumeSortedStarts::new(a);
         let mut iter = SymDiffIter::new(a);
-        assert_eq!(iter.next(), Some(1..=1));
+        assert_eq!(iter.next(), Some(NonZeroRange::new(1..=1)));
         assert_eq!(iter.next(), None);
 
-        let a = [0..=1, 0..=0, 0..=0].into_iter();
+        let a = [0..=1, 0..=0, 0..=0].map(NonZeroRange::new).into_iter();
         let a = AssumeSortedStarts::new(a);
         let mut iter = SymDiffIter::new(a);
-        assert_eq!(iter.next(), Some(0..=1));
+        assert_eq!(iter.next(), Some(NonZeroRange::new(0..=1)));
         assert_eq!(iter.next(), None);
 
-        let a = [0..=0, 0..=0, 0..=0].into_iter();
+        let a = [0..=0, 0..=0, 0..=0].map(NonZeroRange::new).into_iter();
         let a = AssumeSortedStarts::new(a);
         let mut iter = SymDiffIter::new(a);
-        assert_eq!(iter.next(), Some(0..=0));
+        assert_eq!(iter.next(), Some(NonZeroRange::new(0..=0)));
         assert_eq!(iter.next(), None);
 
-        let a = [0..=0, 0..=0].into_iter();
+        let a = [0..=0, 0..=0].map(NonZeroRange::new).into_iter();
         let a = AssumeSortedStarts::new(a);
         let mut iter = SymDiffIter::new(a);
         assert_eq!(iter.next(), None);
 
-        let a = [0..=0, 1..=1].into_iter();
+        let a = [0..=0, 1..=1].map(NonZeroRange::new).into_iter();
         let a = AssumeSortedStarts::new(a);
         let mut iter = SymDiffIter::new(a);
-        assert_eq!(iter.next(), Some(0..=1));
+        assert_eq!(iter.next(), Some(NonZeroRange::new(0..=1)));
         assert_eq!(iter.next(), None);
 
-        let a = [0..=0, 1..=1].into_iter();
+        let a = [0..=0, 1..=1].map(NonZeroRange::new).into_iter();
         let a = AssumeSortedStarts::new(a);
         let mut iter = SymDiffIter::new(a);
-        assert_eq!(iter.next(), Some(0..=1));
+        assert_eq!(iter.next(), Some(NonZeroRange::new(0..=1)));
         assert_eq!(iter.next(), None);
 
-        let a = [0..=0, 2..=2].into_iter();
+        let a = [0..=0, 2..=2].map(NonZeroRange::new).into_iter();
         let a = AssumeSortedStarts::new(a);
         let mut iter = SymDiffIter::new(a);
-        assert_eq!(iter.next(), Some(0..=0));
-        assert_eq!(iter.next(), Some(2..=2));
+        assert_eq!(iter.next(), Some(NonZeroRange::new(0..=0)));
+        assert_eq!(iter.next(), Some(NonZeroRange::new(2..=2)));
         assert_eq!(iter.next(), None);
 
-        let a = core::iter::once(0..=0);
+        let a = core::iter::once(NonZeroRange::new(0..=0));
         let a = AssumeSortedStarts::new(a);
         let mut iter = SymDiffIter::new(a);
-        assert_eq!(iter.next(), Some(0..=0));
+        assert_eq!(iter.next(), Some(NonZeroRange::new(0..=0)));
         assert_eq!(iter.next(), None);
 
-        let a: array::IntoIter<RangeInclusive<i32>, 0> = [].into_iter();
+        let a: array::IntoIter<NonZeroRange<i32>, 0> = [].into_iter();
         let a = AssumeSortedStarts::new(a);
         let iter = SymDiffIter::new(a);
         let v = iter.collect::<Vec<_>>();
@@ -462,38 +462,38 @@ fn convert_challenge() {
     //===========================
 
     // * from sorted_disjoint
-    let a = CheckSortedDisjointMap::new([(1..=2, &"a"), (5..=100, &"a")]);
+    let a = CheckSortedDisjointMap::new([(1..=2, &"a"), (5..=100, &"a")].map(|(r, v)| (NonZeroRange::new(r), v)));
     assert!(a.equal(CheckSortedDisjointMap::new([
         (1..=2, &"a"),
         (5..=100, &"a")
-    ])));
+    ].map(|(r, v)| (NonZeroRange::new(r), v)))));
 
     // * from (priority) sorted_starts
     let a = [(1..=4, &"a"), (5..=5, &"b"), (5..=100, &"a")].into_iter();
     let a = a
         .enumerate()
-        .map(|(i, range_value)| Priority::new(range_value, i));
+        .map(|(i, (r, v))| Priority::new((NonZeroRange::new(r), v), i));
     let a = AssumePrioritySortedStartsMap::new(a);
     let a = UnionIterMap::new(a);
-    assert!(a.equal(CheckSortedDisjointMap::new([(1..=100, &"a")])));
+    assert!(a.equal(CheckSortedDisjointMap::new([(1..=100, &"a")].map(|(r, v)| (NonZeroRange::new(r), v)))));
 
     // * from unsorted_priority_map
     let iter = [(5..=5, &"b"), (5..=100, &"a"), (1..=4, &"a")].into_iter();
     let iter = iter
         .enumerate()
-        .map(|(i, range_value)| Priority::new(range_value, i));
+        .map(|(i, (r, v))| Priority::new((NonZeroRange::new(r), v), i));
     let iter = iter.into_iter().sorted_by(|a, b| {
         // We sort only by start -- priority is not used until later.
         a.start().cmp(&b.start())
     });
     let iter = AssumePrioritySortedStartsMap::new(iter);
     let iter = UnionIterMap::new(iter);
-    assert!(iter.equal(CheckSortedDisjointMap::new([(1..=100, &"a"),])));
+    assert!(iter.equal(CheckSortedDisjointMap::new([(1..=100, &"a"),].map(|(r, v)| (NonZeroRange::new(r), v)))));
 
     // * anything
     let iter = [(5, &"b"), (5, &"a"), (1, &"a")]
         .into_iter()
-        .map(|(x, y)| (x..=x, y));
+        .map(|(x, y)| (NonZeroRange::new(x..=x), y));
     let iter = UnsortedPriorityMap::new(iter);
     let iter = iter.sorted_by(|a, b| {
         // We sort only by start -- priority is not used until later.
@@ -501,42 +501,42 @@ fn convert_challenge() {
     });
     let iter = AssumePrioritySortedStartsMap::new(iter);
     let iter = UnionIterMap::new(iter);
-    assert!(iter.equal(CheckSortedDisjointMap::new([(1..=1, &"a"), (5..=5, &"a"),])));
+    assert!(iter.equal(CheckSortedDisjointMap::new([(1..=1, &"a"), (5..=5, &"a"),].map(|(r, v)| (NonZeroRange::new(r), v)))));
 
     //===========================
     // Map - points
     //===========================
 
     // * from sorted_disjoint
-    let a = [(1, &"a"), (5, &"a")].into_iter().map(|(x, y)| (x..=x, y));
+    let a = [(1, &"a"), (5, &"a")].into_iter().map(|(x, y)| (NonZeroRange::new(x..=x), y));
     let a = CheckSortedDisjointMap::new(a);
-    assert!(a.equal(CheckSortedDisjointMap::new([(1..=1, &"a"), (5..=5, &"a")])));
+    assert!(a.equal(CheckSortedDisjointMap::new([(1..=1, &"a"), (5..=5, &"a")].map(|(r, v)| (NonZeroRange::new(r), v)))));
 
     // * from (priority) sorted_starts
     let a = [(1, &"a"), (5, &"b"), (5, &"a")].into_iter();
     let a = a
         .enumerate()
-        .map(|(i, (k, v))| Priority::new((k..=k, v), i));
+        .map(|(i, (k, v))| Priority::new((NonZeroRange::new(k..=k), v), i));
     let a = AssumePrioritySortedStartsMap::new(a);
     let a = UnionIterMap::new(a);
     // is_sorted_disjoint_map::<_, _, _, _>(a);
-    assert!(a.equal(CheckSortedDisjointMap::new([(1..=1, &"a"), (5..=5, &"a")])));
+    assert!(a.equal(CheckSortedDisjointMap::new([(1..=1, &"a"), (5..=5, &"a")].map(|(r, v)| (NonZeroRange::new(r), v)))));
 
     // * from unsorted_priority_map
     let iter = [(5, &"b"), (5, &"a"), (1, &"a")].into_iter();
     let iter = iter
         .enumerate()
-        .map(|(i, (k, v))| Priority::new((k..=k, v), i));
+        .map(|(i, (k, v))| Priority::new((NonZeroRange::new(k..=k), v), i));
     let iter = iter.into_iter().sorted_by(|a, b| {
         // We sort only by start -- priority is not used until later.
         a.start().cmp(&b.start())
     });
     let iter = AssumePrioritySortedStartsMap::new(iter);
     let iter = UnionIterMap::new(iter);
-    assert!(iter.equal(CheckSortedDisjointMap::new([(1..=1, &"a"), (5..=5, &"a")])));
+    assert!(iter.equal(CheckSortedDisjointMap::new([(1..=1, &"a"), (5..=5, &"a")].map(|(r, v)| (NonZeroRange::new(r), v)))));
 
     // * anything
-    let iter = [(5..=5, &"b"), (5..=100, &"a"), (1..=4, &"a")].into_iter();
+    let iter = [(5..=5, &"b"), (5..=100, &"a"), (1..=4, &"a")].into_iter().map(|(r, v)| (NonZeroRange::new(r), v));
     let iter = UnsortedPriorityMap::new(iter);
     let iter = iter.sorted_by(|a, b| {
         // We sort only by start -- priority is not used until later.
@@ -544,41 +544,41 @@ fn convert_challenge() {
     });
     let iter = AssumePrioritySortedStartsMap::new(iter);
     let iter = UnionIterMap::new(iter);
-    assert!(iter.equal(CheckSortedDisjointMap::new([(1..=100, &"a"),])));
+    assert!(iter.equal(CheckSortedDisjointMap::new([(1..=100, &"a"),].map(|(r, v)| (NonZeroRange::new(r), v)))));
 
     //===========================
     // Set - ranges
     //===========================
 
     // * from sorted_disjoint
-    let a = CheckSortedDisjoint::new([1..=2, 5..=100]);
-    assert!(a.equal(CheckSortedDisjoint::new([1..=2, 5..=100])));
+    let a = CheckSortedDisjoint::new([1..=2, 5..=100].map(NonZeroRange::new));
+    assert!(a.equal(CheckSortedDisjoint::new([1..=2, 5..=100].map(NonZeroRange::new))));
 
     // * from (priority) sorted_starts
-    let a = [1..=4, 5..=100, 5..=5].into_iter();
+    let a = [1..=4, 5..=100, 5..=5].map(NonZeroRange::new).into_iter();
     let a = AssumeSortedStarts::new(a);
     let a = UnionIter::new(a);
-    assert!(a.equal(CheckSortedDisjoint::new([1..=100])));
+    assert!(a.equal(CheckSortedDisjoint::new([1..=100].map(NonZeroRange::new))));
 
     // * from unsorted_priority_map
-    let iter = [5..=100, 5..=5, 1..=4].into_iter();
+    let iter = [5..=100, 5..=5, 1..=4].map(NonZeroRange::new).into_iter();
     let iter = iter.into_iter().sorted_by(|a, b| {
         // We sort only by start -- priority is not used until later.
-        a.start().cmp(b.start())
+        a.start.cmp(&b.start)
     });
     let iter = AssumeSortedStarts::new(iter);
     let iter = UnionIter::new(iter);
-    assert!(iter.equal(CheckSortedDisjoint::new([1..=100])));
+    assert!(iter.equal(CheckSortedDisjoint::new([1..=100].map(NonZeroRange::new))));
 
     // * anything
-    let iter = [5..=100, 5..=5, 1..=5].into_iter();
+    let iter = [5..=100, 5..=5, 1..=5].map(NonZeroRange::new).into_iter();
     let iter = iter.sorted_by(|a, b| {
         // We sort only by start -- priority is not used until later.
-        a.start().cmp(b.start())
+        a.start.cmp(&b.start)
     });
     let iter = AssumeSortedStarts::new(iter);
     let iter = UnionIter::new(iter);
-    assert!(iter.equal(CheckSortedDisjoint::new([1..=100])));
+    assert!(iter.equal(CheckSortedDisjoint::new([1..=100].map(NonZeroRange::new))));
     // Set - points
 
     // what about multiple inputs?

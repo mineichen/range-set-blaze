@@ -1,13 +1,13 @@
-use std::fmt::Debug;
-use std::num::NonZero;
-use std::ops::{Add, Deref, Range, RangeInclusive, Sub};
+use core::fmt::Debug;
+use core::num::NonZero;
+use core::ops::{Add, Deref, Range, RangeInclusive, Sub};
 
 /// Range type
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct NonZeroRange<T>(RangeUnchecked<T>);
 
 impl<T: Debug> Debug for NonZeroRange<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_fmt(format_args!("{:?}..{:?}", self.start, self.end))
     }
 }
@@ -33,10 +33,10 @@ impl<T> From<NonZeroRange<T>> for std::ops::Range<T> {
         value.0.start..value.0.end
     }
 }
-impl<T: PartialOrd> TryFrom<std::ops::Range<T>> for NonZeroRange<T> {
+impl<T: PartialOrd> TryFrom<core::ops::Range<T>> for NonZeroRange<T> {
     type Error = RangeZeroLenghtError<T>;
 
-    fn try_from(value: std::ops::Range<T>) -> Result<Self, Self::Error> {
+    fn try_from(value: core::ops::Range<T>) -> Result<Self, Self::Error> {
         if value.is_empty() {
             Err(RangeZeroLenghtError(value))
         } else {
@@ -91,14 +91,14 @@ impl<T> From<Range<T>> for RangeUnchecked<T> {
     }
 }
 
-impl<T: num_traits::One + std::ops::Sub<Output = T> + std::ops::Add<Output = T>>
-    From<RangeInclusive<T>> for RangeUnchecked<T>
+impl<T: num_traits::One + core::ops::Add<Output = T>> From<RangeInclusive<T>>
+    for RangeUnchecked<T>
 {
     fn from(value: RangeInclusive<T>) -> Self {
         let (start, end) = value.into_inner();
         RangeUnchecked {
             start,
-            end: end - T::one(),
+            end: end + T::one(),
         }
     }
 }
@@ -175,7 +175,7 @@ impl<T> Deref for NonZeroRange<T> {
     }
 }
 
-pub struct RangeZeroLenghtError<T>(std::ops::Range<T>);
+pub struct RangeZeroLenghtError<T>(core::ops::Range<T>);
 
 #[cfg(test)]
 mod tests {

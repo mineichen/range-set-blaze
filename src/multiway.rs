@@ -298,7 +298,7 @@ where
     ///
     /// let union = [a, b, c].union();
     ///
-    /// assert_eq!(union.into_string(), "1..=15, 18..=100");
+    /// assert_eq!(union.into_string(), "1..16, 18..101");
     /// ```
     fn union(self) -> UnionKMerge<T, I> {
         UnionIter::new_k(self)
@@ -332,7 +332,7 @@ where
     ///
     /// let intersection = [a, b, c].intersection();
     ///
-    /// assert_eq!(intersection.into_string(), "5..=6, 8..=9, 11..=13");
+    /// assert_eq!(intersection.into_string(), "5..7, 8..10, 11..14");
     /// ```
     fn intersection(self) -> IntersectionMapInternal<T, I> {
         // We define set intersection in terms of complement and (set/map) union.
@@ -371,7 +371,7 @@ where
     ///
     /// assert_eq!(
     ///     symmetric_difference.into_string(),
-    ///     "-100..=0, 5..=6, 8..=9, 11..=13, 16..=17, 30..=100"
+    ///     "-100..1, 5..7, 8..10, 11..14, 16..18, 30..101"
     /// );
     /// ```
     fn symmetric_difference(self) -> SymDiffKMerge<T, I> {

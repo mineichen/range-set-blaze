@@ -9,12 +9,12 @@ extern crate alloc;
 use alloc::collections::BTreeMap;
 use core::cmp::Ordering;
 use core::fmt;
-use core::ops::RangeInclusive;
 #[cfg(not(target_arch = "wasm32"))]
 use quickcheck_macros::quickcheck;
 use rand::seq::IndexedRandom;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 use range_set_blaze::Integer;
+use range_set_blaze::NonZeroRange;
 #[cfg(not(target_arch = "wasm32"))]
 use range_set_blaze::test_util::{How, k_maps};
 use range_set_blaze::{
@@ -773,7 +773,7 @@ fn map_complement() {
         (1..=1, &"f"),
         (1..=1, &"f"),
         (1..=1, &"f"),
-    ]);
+    ].map(|(r, v)| (NonZeroRange::new(r), v)));
 
     let not_b = b.complement_with(&"A");
     let not_c = c.complement_with(&"A");
@@ -1425,9 +1425,8 @@ fn linear(
     range_map_blaze
         .range_values()
         .map(|(range, value)| {
-            let (start, end) = range.into_inner();
-            let mut a = (start - first) * scale.abs() + first;
-            let mut b = (end + 1 - first) * scale.abs() + first - 1;
+            let mut a = (range.start - first) * scale.abs() + first;
+            let mut b = (range.end - first) * scale.abs() + first - 1;
             let last = (last + 1 - first) * scale.abs() + first - 1;
             if scale < 0 {
                 (a, b) = (last - b + first, last - a + first);
@@ -1508,13 +1507,13 @@ fn understand_strings_as_values() {
     // You can get all the same types via CheckSortedDisjointMap, but values are always (clonable) references.
     let a_string = "a".to_string();
     let mut b: CheckSortedDisjointMap<i32, &String, _> =
-        CheckSortedDisjointMap::new([(0..=0, &a_string)]);
+        CheckSortedDisjointMap::new([(0..=0, &a_string)].map(|(r, v)| (NonZeroRange::new(r), v)));
     let c: &String = b.next().unwrap().1;
     let _c_clone: String = c.clone();
     let _: CheckSortedDisjointMap<i32, &&String, _> =
-        CheckSortedDisjointMap::new([(0..=0, &&a_string)]);
+        CheckSortedDisjointMap::new([(0..=0, &&a_string)].map(|(r, v)| (NonZeroRange::new(r), v)));
     let _: CheckSortedDisjointMap<i32, &String, _> =
-        CheckSortedDisjointMap::new([(0..=0, &"a".to_string())]);
+        CheckSortedDisjointMap::new([(0..=0, &"a".to_string())].map(|(r, v)| (NonZeroRange::new(r), v)));
 }
 
 #[test]
@@ -1533,28 +1532,28 @@ fn test_every_sorted_disjoint_map_method() {
     macro_rules! fresh_instances {
         () => {{
             let a: CheckSortedDisjointMap<i32, &&str, _> =
-                CheckSortedDisjointMap::new([(1..=2, &"a"), (5..=100, &"a")]);
+                CheckSortedDisjointMap::new([(1..=2, &"a"), (5..=100, &"a")].map(|(r, v)| (NonZeroRange::new(r), v)));
             let b: DynSortedDisjointMap<'_, i32, &&str> =
                 DynSortedDisjointMap::new(CheckSortedDisjointMap::new([
                     (1..=2, &"a"),
                     (5..=100, &"a"),
-                ]));
+                ].map(|(r, v)| (NonZeroRange::new(r), v))));
             let c: IntersectionIterMap<i32, &&str, _, _> = [CheckSortedDisjointMap::new([
                 (1..=2, &"a"),
                 (5..=100, &"a"),
-            ])]
+            ].map(|(r, v)| (NonZeroRange::new(r), v)))]
             .intersection();
             let d: IntoRangeValuesIter<i32, &str> = e0.clone().into_range_values();
             let e: RangeValuesIter<'_, i32, &str> = e0.range_values();
             let f: SymDiffIterMap<i32, &&str, _> = [CheckSortedDisjointMap::new([
                 (1..=2, &"a"),
                 (5..=100, &"a"),
-            ])]
+            ].map(|(r, v)| (NonZeroRange::new(r), v)))]
             .symmetric_difference();
             let g: UnionIterMap<i32, &&str, _> = [CheckSortedDisjointMap::new([
                 (1..=2, &"a"),
                 (5..=100, &"a"),
-            ])]
+            ].map(|(r, v)| (NonZeroRange::new(r), v)))]
             .union();
 
             (a, b, c, d, e, f, g)
@@ -1583,58 +1582,58 @@ fn test_every_sorted_disjoint_map_method() {
     let (a, b, c, d, e, f, g) = fresh_instances!();
     syntactic_for! { sd in [a,b,c,d,e,f,g] {$(
         let z = ! $sd;
-        assert!(z.equal(CheckSortedDisjoint::new([-2_147_483_648..=0, 3..=4, 101..=2_147_483_647])));
+        assert!(z.equal(CheckSortedDisjoint::new([-2_147_483_648..=0, 3..=4, 101..=2_147_483_647].map(NonZeroRange::new))));
     )*}}
 
     // Union
     let (a, b, c, d, e, f, g) = fresh_instances!();
     syntactic_for! { sd in [a, b, c, e, f, g] {$(
-        let z: CheckSortedDisjointMap<i32, &&str, _> = CheckSortedDisjointMap::new([(-1..=0,&"z"), (50..=50, &"z"),(1000..=10_000,&"z")]);
+        let z: CheckSortedDisjointMap<i32, &&str, _> = CheckSortedDisjointMap::new([(-1..=0,&"z"), (50..=50, &"z"),(1000..=10_000,&"z")].map(|(r, v)| (NonZeroRange::new(r), v)));
         let z = z | $sd;
-        assert!(z.equal(CheckSortedDisjointMap::new([(-1..=0, &"z"), (1..=2, &"a"), (5..=100, &"a"), (1000..=10000, &"z")])));
+        assert!(z.equal(CheckSortedDisjointMap::new([(-1..=0, &"z"), (1..=2, &"a"), (5..=100, &"a"), (1000..=10000, &"z")].map(|(r, v)| (NonZeroRange::new(r), v)))));
     )*}}
     let z: CheckSortedDisjointMap<i32, Rc<&str>, _> = CheckSortedDisjointMap::new([
         (-1..=0, Rc::new("z")),
         (50..=50, Rc::new("z")),
         (1000..=10_000, Rc::new("z")),
-    ]);
+    ].map(|(r, v)| (NonZeroRange::new(r), v)));
     let z = z | d;
     assert!(z.equal(CheckSortedDisjointMap::new([
         (-1..=0, Rc::new("z")),
         (1..=2, Rc::new("a")),
         (5..=100, Rc::new("a")),
         (1000..=10000, Rc::new("z"))
-    ])));
+    ].map(|(r, v)| (NonZeroRange::new(r), v)))));
 
     // Intersection
     let (a, b, c, d, e, f, g) = fresh_instances!();
     syntactic_for! { sd in [a, b, c, e, f, g] {$(
-        let z: CheckSortedDisjointMap<i32, &&str, _> = CheckSortedDisjointMap::new([(-1..=0,&"z"), (50..=50, &"z"),(1000..=10_000,&"z")]);
+        let z: CheckSortedDisjointMap<i32, &&str, _> = CheckSortedDisjointMap::new([(-1..=0,&"z"), (50..=50, &"z"),(1000..=10_000,&"z")].map(|(r, v)| (NonZeroRange::new(r), v)));
         let z = z & $sd;
         // println!("{}", z.into_string());
-        assert!(z.equal(CheckSortedDisjointMap::new([(50..=50, &"a")])));
+        assert!(z.equal(CheckSortedDisjointMap::new([(50..=50, &"a")].map(|(r, v)| (NonZeroRange::new(r), v)))));
     )*}}
     let z: CheckSortedDisjointMap<i32, Rc<&str>, _> = CheckSortedDisjointMap::new([
         (-1..=0, Rc::new("z")),
         (50..=50, Rc::new("z")),
         (1000..=10_000, Rc::new("z")),
-    ]);
+    ].map(|(r, v)| (NonZeroRange::new(r), v)));
     let z = z & d;
-    assert!(z.equal(CheckSortedDisjointMap::new([(50..=50, Rc::new("a"))])));
+    assert!(z.equal(CheckSortedDisjointMap::new([(50..=50, Rc::new("a"))].map(|(r, v)| (NonZeroRange::new(r), v)))));
 
     // Symmetric Difference
     let (a, b, c, d, e, f, g) = fresh_instances!();
     syntactic_for! { sd in [a, b, c, e,f,g] {$(
-        let z: CheckSortedDisjointMap<i32, &&str, _> = CheckSortedDisjointMap::new([(-1..=0,&"z"), (50..=50, &"z"),(1000..=10_000,&"z")]);
+        let z: CheckSortedDisjointMap<i32, &&str, _> = CheckSortedDisjointMap::new([(-1..=0,&"z"), (50..=50, &"z"),(1000..=10_000,&"z")].map(|(r, v)| (NonZeroRange::new(r), v)));
         let z = z ^ $sd;
         // println!("a {}", z.into_string());
-        assert!(z.equal(CheckSortedDisjointMap::new([(-1..=0, &"z"), (1..=2, &"a"), (5..=49, &"a"), (51..=100, &"a"), (1000..=10000, &"z")])));
+        assert!(z.equal(CheckSortedDisjointMap::new([(-1..=0, &"z"), (1..=2, &"a"), (5..=49, &"a"), (51..=100, &"a"), (1000..=10000, &"z")].map(|(r, v)| (NonZeroRange::new(r), v)))));
     )*}}
     let z: CheckSortedDisjointMap<i32, Rc<&str>, _> = CheckSortedDisjointMap::new([
         (-1..=0, Rc::new("z")),
         (50..=50, Rc::new("z")),
         (1000..=10_000, Rc::new("z")),
-    ]);
+    ].map(|(r, v)| (NonZeroRange::new(r), v)));
     let z = z ^ d;
     assert!(z.equal(CheckSortedDisjointMap::new([
         (-1..=0, Rc::new("z")),
@@ -1642,27 +1641,27 @@ fn test_every_sorted_disjoint_map_method() {
         (5..=49, Rc::new("a")),
         (51..=100, Rc::new("a")),
         (1000..=10_000, Rc::new("z"))
-    ])));
+    ].map(|(r, v)| (NonZeroRange::new(r), v)))));
 
     // set difference
     let (a, b, c, d, e, f, g) = fresh_instances!();
     syntactic_for! { sd in [a, b, c,  e,f,g] {$(
-        let z: CheckSortedDisjointMap<i32, &&str, _> = CheckSortedDisjointMap::new([(-1..=0,&"z"), (50..=50, &"z"),(1000..=10_000,&"z")]);
+        let z: CheckSortedDisjointMap<i32, &&str, _> = CheckSortedDisjointMap::new([(-1..=0,&"z"), (50..=50, &"z"),(1000..=10_000,&"z")].map(|(r, v)| (NonZeroRange::new(r), v)));
         let z = $sd - z;
         // println!("c {}", z.into_string());
-        assert!(z.equal(CheckSortedDisjointMap::new([(1..=2, &"a"), (5..=49, &"a"), (51..=100, &"a")])));
+        assert!(z.equal(CheckSortedDisjointMap::new([(1..=2, &"a"), (5..=49, &"a"), (51..=100, &"a")].map(|(r, v)| (NonZeroRange::new(r), v)))));
     )*}}
     let z: CheckSortedDisjointMap<i32, Rc<&str>, _> = CheckSortedDisjointMap::new([
         (-1..=0, Rc::new("z")),
         (50..=50, Rc::new("z")),
         (1000..=10_000, Rc::new("z")),
-    ]);
+    ].map(|(r, v)| (NonZeroRange::new(r), v)));
     let z = d - z;
     assert!(z.equal(CheckSortedDisjointMap::new([
         (1..=2, Rc::new("a")),
         (5..=49, Rc::new("a")),
         (51..=100, Rc::new("a")),
-    ])));
+    ].map(|(r, v)| (NonZeroRange::new(r), v)))));
 }
 
 #[test]
@@ -1937,7 +1936,7 @@ fn map_random_intersection() {
             let mut expected_keys = map0
                 .ranges()
                 .intersection(set0.ranges())
-                .collect::<RangeSetBlaze<_>>();
+                .into_range_set_blaze();
             if !expected_keys.is_empty() {
                 // println!("expected_keys: {expected_keys}");
             }
@@ -1945,11 +1944,13 @@ fn map_random_intersection() {
                 let (range, value) = range_value;
                 // println!();
                 // print!("removing ");
-                for k in range {
+                let mut k = range.start;
+                while k < range.end {
                     assert_eq!(map0.get(k), Some(value));
                     assert!(set0.contains(k));
                     // print!("{k} ");
                     assert!(expected_keys.remove(k));
+                    k = k.add_one();
                 }
                 // println!();
             }
@@ -2035,7 +2036,7 @@ fn map_random_symmetric_difference() {
                 let (range, value) = range_value;
                 // println!();
                 // print!("removing ");
-                for k in range {
+                for k in range.start..range.end {
                     let get0 = map0.get(k);
                     let get1 = map1.get(k);
                     match (get0, get1) {
@@ -2095,14 +2096,14 @@ where
     usize: std::convert::From<<T as Integer>::SafeLen>,
 {
     // Also checks that the ranges are really sorted and disjoint
-    let mut previous: Option<(RangeInclusive<T>, &V)> = None;
+    let mut previous: Option<(NonZeroRange<T>, &V)> = None;
     for range_value in range_map_blaze.range_values() {
         let v = range_value.1;
-        let range = range_value.0.clone();
+        let range = range_value.0;
 
         if let Some(previous) = previous
-            && ((previous.1 == v && (*previous.0.end()).add_one() >= *range.start())
-                || previous.0.end() >= range.start())
+            && ((previous.1 == v && previous.0.end >= range.start)
+                || previous.0.end > range.start)
         {
             eprintln!(
                 "two ranges are not disjoint: {:?}->{} and {range:?}->{v}",
@@ -2111,8 +2112,8 @@ where
             return false;
         }
 
-        debug_assert!(range.start() <= range.end());
-        let mut k = *range.start();
+        debug_assert!(range.start < range.end);
+        let mut k = range.start;
         loop {
             if btree_map.get(&k).is_none_or(|v2| v != *v2) {
                 eprintln!(
@@ -2121,10 +2122,10 @@ where
                 );
                 return false;
             }
-            if k == *range.end() {
+            k = k.add_one();
+            if k == range.end {
                 break;
             }
-            k = k.add_one();
         }
         previous = Some(range_value);
     }
@@ -2505,15 +2506,15 @@ fn test_range_map_blaze_from_iter_string() {
 #[test]
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn sorted_disjoint_coverage0() {
-    let a = CheckSortedDisjointMap::new([(1..=2, &"a"), (3..=4, &"b")]);
+    let a = CheckSortedDisjointMap::new([(1..=2, &"a"), (3..=4, &"b")].map(|(r, v)| (NonZeroRange::new(r), v)));
     let b0 = RangeMapBlaze::from_iter([(1..=2, "a")]);
     let b = b0.range_values();
     assert!(!a.equal(b)); // This should return false because `a` and `b` have different lengths
 
-    let a = CheckSortedDisjointMap::new([(1..=2, &"a"), (3..=4, &"b")]);
+    let a = CheckSortedDisjointMap::new([(1..=2, &"a"), (3..=4, &"b")].map(|(r, v)| (NonZeroRange::new(r), v)));
     assert!(!a.is_empty());
 
-    let a: CheckSortedDisjointMap<i32, &&str, core::iter::Empty<(RangeInclusive<i32>, &&str)>> =
+    let a: CheckSortedDisjointMap<i32, &&str, core::iter::Empty<(NonZeroRange<i32>, &&str)>> =
         CheckSortedDisjointMap::default();
     assert!(a.is_empty());
 }
@@ -2525,12 +2526,12 @@ struct NotFusedIterator {
 }
 
 impl Iterator for NotFusedIterator {
-    type Item = (std::ops::RangeInclusive<i32>, &'static &'static str);
+    type Item = (NonZeroRange<i32>, &'static &'static str);
 
     fn next(&mut self) -> Option<Self::Item> {
         self.state = !self.state;
         if self.state {
-            Some((1..=2, &"a"))
+            Some((NonZeroRange::new(1..=2), &"a"))
         } else {
             None
         }
@@ -2542,32 +2543,34 @@ impl Iterator for NotFusedIterator {
 #[should_panic(expected = "a value must not be returned after None")]
 fn test_panic_not_fused() {
     let mut iter = CheckSortedDisjointMap::new(NotFusedIterator::default());
-    assert_eq!(iter.next(), Some((1..=2, &"a")));
+    assert_eq!(iter.next(), Some((NonZeroRange::new(1..=2), &"a")));
     assert_eq!(iter.next(), None);
-    assert_eq!(iter.next(), Some((1..=2, &"a"))); // Should panic
+    assert_eq!(iter.next(), Some((NonZeroRange::new(1..=2), &"a"))); // Should panic
 }
 
 #[test]
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 #[allow(clippy::reversed_empty_ranges)]
-#[should_panic(expected = "start must be <= end")]
+#[should_panic(expected = "start must be < end")]
 fn test_panic_start_greater_than_end() {
-    let mut iter = CheckSortedDisjointMap::new([(3..=2, &"a")]);
-    assert_eq!(iter.next(), Some((3..=2, &"a"))); // Invalid range, should panic
+    // SAFETY: intentionally invalid to test CheckSortedDisjointMap validation
+    let invalid = unsafe { NonZeroRange::new_unchecked(3i32..3i32) };
+    let mut iter = CheckSortedDisjointMap::new([(invalid, &"a")]);
+    assert_eq!(iter.next(), Some((invalid, &"a"))); // Invalid range, should panic
 }
 
 #[test]
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 #[should_panic(expected = "ranges must be disjoint and sorted")]
 fn test_panic_ranges_not_disjoint_or_sorted() {
-    for _ in CheckSortedDisjointMap::new([(1..=3, &"a"), (2..=4, &"b")]) {} // Overlapping range
+    for _ in CheckSortedDisjointMap::new([(1..=3, &"a"), (2..=4, &"b")].map(|(r, v)| (NonZeroRange::new(r), v))) {} // Overlapping range
 }
 
 #[test]
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 #[should_panic(expected = "touching ranges must have different values")]
 fn test_panic_touching_ranges_same_value() {
-    for _ in CheckSortedDisjointMap::new([(1..=2, &"a"), (3..=4, &"a")]) {} // Touching ranges with the same value
+    for _ in CheckSortedDisjointMap::new([(1..=2, &"a"), (3..=4, &"a")].map(|(r, v)| (NonZeroRange::new(r), v))) {} // Touching ranges with the same value
 }
 
 #[test]
@@ -2580,8 +2583,8 @@ fn test_into_range_values() {
     assert_eq!(a.len(), 1);
 
     let mut a = RangeMapBlaze::from_iter([(1..=2, "a"), (3..=4, "b")]).into_range_values();
-    assert_eq!(a.next_back(), Some((3..=4, Rc::new("b"))));
-    assert_eq!(a.next_back(), Some((1..=2, Rc::new("a"))));
+    assert_eq!(a.next_back(), Some((NonZeroRange::new(3..=4), Rc::new("b"))));
+    assert_eq!(a.next_back(), Some((NonZeroRange::new(1..=2), Rc::new("a"))));
     assert_eq!(a.next_back(), None);
     assert_eq!(a.len(), 0);
 }
@@ -2591,12 +2594,12 @@ fn test_into_range_values() {
 fn test_into_map_into_ranges() {
     let mut a = RangeMapBlaze::from_iter([(1..=2, "a"), (3..=4, "b")]).into_ranges();
     assert_eq!(a.size_hint(), (0, Some(2)));
-    assert_eq!(a.next(), Some(1..=4));
+    assert_eq!(a.next(), Some(NonZeroRange::new(1..=4)));
 
     let r = RangeMapBlaze::from_iter([(1..=2, "a"), (3..=4, "b")]);
     let mut a = r.ranges();
     assert_eq!(a.size_hint(), (0, Some(2)));
-    assert_eq!(a.next(), Some(1..=4));
+    assert_eq!(a.next(), Some(NonZeroRange::new(1..=4)));
 }
 
 #[test]
@@ -2722,9 +2725,9 @@ fn more_coverage_of_maps() {
 #[test]
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn test_range_values_to_ranges_iter_disjoint() {
-    let a = CheckSortedDisjointMap::new([(1..=3, &"a"), (4..=4, &"b"), (5..=10, &"a")]);
+    let a = CheckSortedDisjointMap::new([(1..=3, &"a"), (4..=4, &"b"), (5..=10, &"a")].map(|(r, v)| (NonZeroRange::new(r), v)));
     let mut iter = a.into_sorted_disjoint();
-    assert_eq!(iter.next(), Some(1..=10));
+    assert_eq!(iter.next(), Some(NonZeroRange::new(1..=10)));
     assert_eq!(iter.next(), None);
 }
 
@@ -2777,7 +2780,7 @@ fn test_empty_inputs_union_symmetric_difference() {
     fn make_inputs<'a>() -> [CheckSortedDisjointMap<
         i32,
         &'a &'a str,
-        std::vec::IntoIter<(RangeInclusive<i32>, &'a &'a str)>,
+        std::vec::IntoIter<(NonZeroRange<i32>, &'a &'a str)>,
     >; 0] {
         []
     }
@@ -2813,7 +2816,7 @@ fn test_empty_inputs_intersection2() {
     fn make_inputs<'a>() -> [CheckSortedDisjointMap<
         i32,
         &'a &'a str,
-        std::vec::IntoIter<(RangeInclusive<i32>, &'a &'a str)>,
+        std::vec::IntoIter<(NonZeroRange<i32>, &'a &'a str)>,
     >; 0] {
         []
     }
@@ -3118,6 +3121,7 @@ fn test_union() {
     let map0 = &temp[0];
     let rangemap_map0 = &map0
         .range_values()
+        .map(|(r, v)| (r.start..=r.end.sub_one(), v))
         .collect::<rangemap::RangeInclusiveMap<_, _>>();
 
     let map1 = &k_maps(
@@ -3132,6 +3136,7 @@ fn test_union() {
     )[0];
     let rangemap_map1 = map1
         .range_values()
+        .map(|(r, v)| (r.start..=r.end.sub_one(), v))
         .collect::<rangemap::RangeInclusiveMap<_, _>>();
 
     let mut a0a = map0.clone();
@@ -3177,14 +3182,14 @@ fn test_full() {
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn test_full_sorted_disjoint_map() {
     // Test with CheckSortedDisjointMap
-    let empty_iter: Vec<(RangeInclusive<u8>, &&str)> = vec![];
+    let empty_iter: Vec<(NonZeroRange<u8>, &&str)> = vec![];
     let empty_map = CheckSortedDisjointMap::new(empty_iter);
     assert!(!empty_map.is_universal());
 
-    let partial_map = CheckSortedDisjointMap::new([(0u8..=254u8, &"a")]);
+    let partial_map = CheckSortedDisjointMap::new([(0u8..=254u8, &"a")].map(|(r, v)| (NonZeroRange::new(r), v)));
     assert!(!partial_map.is_universal());
 
-    let full_map = CheckSortedDisjointMap::new([(0u8..=255u8, &"a")]);
+    let full_map = CheckSortedDisjointMap::new([(0u8..=255u8, &"a")].map(|(r, v)| (NonZeroRange::new(r), v)));
     assert!(full_map.is_universal());
 
     // Test with multiple ranges that cover the full space
@@ -3192,12 +3197,12 @@ fn test_full_sorted_disjoint_map() {
         (0u8..=100u8, &"first"),
         (101u8..=200u8, &"second"),
         (201u8..=255u8, &"third"),
-    ]);
+    ].map(|(r, v)| (NonZeroRange::new(r), v)));
     assert!(multi_range_map.is_universal());
 
     // Test with DynSortedDisjointMap
     let dyn_full_map =
-        DynSortedDisjointMap::new(CheckSortedDisjointMap::new([(0u8..=255u8, &"a")]));
+        DynSortedDisjointMap::new(CheckSortedDisjointMap::new([(0u8..=255u8, &"a")].map(|(r, v)| (NonZeroRange::new(r), v))));
     assert!(dyn_full_map.is_universal());
 }
 

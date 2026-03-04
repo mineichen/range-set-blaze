@@ -1,6 +1,6 @@
-use crate::Integer;
+use crate::{Integer, NonZeroRange};
 use alloc::collections::btree_map;
-use core::{iter::FusedIterator, ops::RangeInclusive};
+use core::iter::FusedIterator;
 
 /// This `struct` is created by the [`ranges`] method on [`RangeSetBlaze`]. See [`ranges`]'s
 /// documentation for more. Double-ended.
@@ -23,10 +23,12 @@ impl<T: Integer> FusedIterator for RangesIter<'_, T> {}
 
 // Range's iterator is just the inside BTreeMap iterator as values
 impl<T: Integer> Iterator for RangesIter<'_, T> {
-    type Item = RangeInclusive<T>;
+    type Item = NonZeroRange<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next().map(|(start, end)| *start..=*end)
+        self.iter
+            .next()
+            .map(|(start, end)| unsafe { NonZeroRange::new_unchecked(*start..end.add_one()) })
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -36,7 +38,9 @@ impl<T: Integer> Iterator for RangesIter<'_, T> {
 
 impl<T: Integer> DoubleEndedIterator for RangesIter<'_, T> {
     fn next_back(&mut self) -> Option<Self::Item> {
-        self.iter.next_back().map(|(start, end)| *start..=*end)
+        self.iter
+            .next_back()
+            .map(|(start, end)| unsafe { NonZeroRange::new_unchecked(*start..end.add_one()) })
     }
 }
 
@@ -61,10 +65,12 @@ impl<T: Integer> FusedIterator for IntoRangesIter<T> {}
 
 // Range's iterator is just the inside BTreeMap iterator as values
 impl<T: Integer> Iterator for IntoRangesIter<T> {
-    type Item = RangeInclusive<T>;
+    type Item = NonZeroRange<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next().map(|(start, end)| start..=end)
+        self.iter
+            .next()
+            .map(|(start, end)| unsafe { NonZeroRange::new_unchecked(start..end.add_one()) })
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -74,6 +80,8 @@ impl<T: Integer> Iterator for IntoRangesIter<T> {
 
 impl<T: Integer> DoubleEndedIterator for IntoRangesIter<T> {
     fn next_back(&mut self) -> Option<Self::Item> {
-        self.iter.next_back().map(|(start, end)| start..=end)
+        self.iter
+            .next_back()
+            .map(|(start, end)| unsafe { NonZeroRange::new_unchecked(start..end.add_one()) })
     }
 }

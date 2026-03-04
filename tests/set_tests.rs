@@ -3,7 +3,7 @@
 #![cfg(test)]
 use range_set_blaze::{
     AssumeSortedStarts, IntoIter, IntoRangesIter, Iter, KMerge, MapIntoRangesIter, MapRangesIter,
-    Merge, RangeOnce, RangeValuesIter, RangeValuesToRangesIter, RangesIter,
+    Merge, NonZeroRange, RangeOnce, RangeValuesIter, RangeValuesToRangesIter, RangesIter,
 };
 
 use wasm_bindgen_test::*;
@@ -1102,7 +1102,7 @@ fn example_3() {
         RangeSetBlaze::from_iter([30818..=32357, 32562..=36714])
     );
     for range in intron.ranges() {
-        let (start, end) = range.into_inner();
+        let (start, end) = (range.start, range.end);
         println!("{chrom}\t{start}\t{end}");
     }
 }
@@ -1137,8 +1137,8 @@ fn multiway2() {
 fn check_sorted_disjoint() {
     use range_set_blaze::CheckSortedDisjoint;
 
-    let a = CheckSortedDisjoint::new([1..=2, 5..=100]);
-    let b = CheckSortedDisjoint::new([2..=6]);
+    let a = CheckSortedDisjoint::new([1..=2, 5..=100].map(NonZeroRange::new));
+    let b = CheckSortedDisjoint::new([2..=6].map(NonZeroRange::new));
     let c = a | b;
 
     assert_eq!(c.into_string(), "1..=100");
@@ -1162,12 +1162,12 @@ fn dyn_sorted_disjoint_example() {
 #[test]
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn not_iter_example() {
-    let a = CheckSortedDisjoint::new([1u8..=2, 5..=100]);
+    let a = CheckSortedDisjoint::new([1u8..=2, 5..=100].map(NonZeroRange::new));
     let b = !a;
     assert_eq!(b.into_string(), "0..=0, 3..=4, 101..=255");
 
     // Or, equivalently:
-    let b = !CheckSortedDisjoint::new([1u8..=2, 5..=100]);
+    let b = !CheckSortedDisjoint::new([1u8..=2, 5..=100].map(NonZeroRange::new));
     assert_eq!(b.into_string(), "0..=0, 3..=4, 101..=255");
 }
 
@@ -1183,22 +1183,22 @@ fn len_demo() {
 #[test]
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn bitor() {
-    let a = CheckSortedDisjoint::new([1..=1]);
+    let a = CheckSortedDisjoint::new([1..=1].map(NonZeroRange::new));
     let b = RangeSetBlaze::from_iter([2..=2]).into_ranges();
     let union = core::ops::BitOr::bitor(a, b);
     assert_eq!(union.into_string(), "1..=2");
 
-    let a = CheckSortedDisjoint::new([1..=1]);
-    let b = CheckSortedDisjoint::new([2..=2]);
+    let a = CheckSortedDisjoint::new([1..=1].map(NonZeroRange::new));
+    let b = CheckSortedDisjoint::new([2..=2].map(NonZeroRange::new));
     let c = range_set_blaze::SortedDisjoint::union(a, b);
     assert_eq!(c.into_string(), "1..=2");
 
-    let a = CheckSortedDisjoint::new([1..=1]);
-    let b = CheckSortedDisjoint::new([2..=2]);
+    let a = CheckSortedDisjoint::new([1..=1].map(NonZeroRange::new));
+    let b = CheckSortedDisjoint::new([2..=2].map(NonZeroRange::new));
     let c = core::ops::BitOr::bitor(a, b);
     assert_eq!(c.into_string(), "1..=2");
 
-    let a = CheckSortedDisjoint::new([1..=1]);
+    let a = CheckSortedDisjoint::new([1..=1].map(NonZeroRange::new));
     let b = RangeSetBlaze::from_iter([2..=2]).into_ranges();
     let c = range_set_blaze::SortedDisjoint::union(a, b);
     assert_eq!(c.into_string(), "1..=2");
@@ -1227,8 +1227,8 @@ fn range_set_blaze_constructors() {
     assert!(a0 == a1 && a0.to_string() == "-10..=-5, 1..=2");
 
     // If we know the ranges are sorted and disjoint, we can use 'from'/'into'.
-    let a0 = RangeSetBlaze::from_sorted_disjoint(CheckSortedDisjoint::new([-10..=-5, 1..=2]));
-    let a1: RangeSetBlaze<i32> = CheckSortedDisjoint::new([-10..=-5, 1..=2]).into_range_set_blaze();
+    let a0 = RangeSetBlaze::from_sorted_disjoint(CheckSortedDisjoint::new([-10..=-5, 1..=2].map(NonZeroRange::new)));
+    let a1: RangeSetBlaze<i32> = CheckSortedDisjoint::new([-10..=-5, 1..=2].map(NonZeroRange::new)).into_range_set_blaze();
     assert!(a0 == a1 && a0.to_string() == "-10..=-5, 1..=2");
 
     // For compatibility with `BTreeSet`, we also support
@@ -1427,14 +1427,14 @@ fn sorted_disjoint_constructors() {
     assert!(a.into_string() == "1..=3, 100..=100");
 
     // CheckSortedDisjoint -- unsorted or overlapping input ranges will cause a panic.
-    let a = CheckSortedDisjoint::new([1..=3, 100..=100]);
+    let a = CheckSortedDisjoint::new([1..=3, 100..=100].map(NonZeroRange::new));
     assert!(a.into_string() == "1..=3, 100..=100");
 
     // tee of a SortedDisjoint iterator
-    let _a = CheckSortedDisjoint::new([1..=3, 100..=100]);
+    let _a = CheckSortedDisjoint::new([1..=3, 100..=100].map(NonZeroRange::new));
 
     // DynamicSortedDisjoint of a SortedDisjoint iterator
-    let a = CheckSortedDisjoint::new([1..=3, 100..=100]);
+    let a = CheckSortedDisjoint::new([1..=3, 100..=100].map(NonZeroRange::new));
     let b = DynSortedDisjoint::new(a);
     assert!(b.into_string() == "1..=3, 100..=100");
 }
@@ -1456,20 +1456,20 @@ fn iterator_example() {
     }
     impl FusedIterator for OrdinalWeekends2023 {}
     impl Iterator for OrdinalWeekends2023 {
-        type Item = RangeInclusive<i32>;
+        type Item = NonZeroRange<i32>;
         fn next(&mut self) -> Option<Self::Item> {
             let (start, end) = self.next_range.clone().into_inner();
             if start > 365 {
                 None
             } else {
                 self.next_range = (start + 7)..=(end + 7);
-                Some(start.max(1)..=end.min(365))
+                Some(NonZeroRange::new(start.max(1)..=end.min(365)))
             }
         }
     }
 
     let weekends = OrdinalWeekends2023::new();
-    let sept = CheckSortedDisjoint::new([244..=273]);
+    let sept = CheckSortedDisjoint::new([244..=273].map(NonZeroRange::new));
     let sept_weekdays = sept.intersection(weekends.complement());
     assert_eq!(
         sept_weekdays.into_string(),
@@ -1493,7 +1493,7 @@ fn sorted_disjoint_operators() {
     // '|' operator and 'equal' method
     let (a, b) = (a0.ranges(), b0.ranges());
     let result = a | b;
-    assert!(result.equal(CheckSortedDisjoint::new([1..=100])));
+    assert!(result.equal(CheckSortedDisjoint::new([1..=100].map(NonZeroRange::new))));
 
     // multiway union of same type
     let (a, b, c) = (a0.ranges(), b0.ranges(), c0.ranges());
@@ -1541,16 +1541,16 @@ fn range_test() {
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 #[allow(clippy::bool_assert_comparison)]
 fn is_subset_check() {
-    let sup = CheckSortedDisjoint::new([1..=3]);
+    let sup = CheckSortedDisjoint::new([1..=3].map(NonZeroRange::new));
     let set: CheckSortedDisjoint<i32, _> = [].into();
     assert_eq!(set.is_subset(sup), true);
 
-    let sup = CheckSortedDisjoint::new([1..=3]);
-    let set = CheckSortedDisjoint::new([2..=2]);
+    let sup = CheckSortedDisjoint::new([1..=3].map(NonZeroRange::new));
+    let set = CheckSortedDisjoint::new([2..=2].map(NonZeroRange::new));
     assert_eq!(set.is_subset(sup), true);
 
-    let sup = CheckSortedDisjoint::new([1..=3]);
-    let set = CheckSortedDisjoint::new([2..=2, 4..=4]);
+    let sup = CheckSortedDisjoint::new([1..=3].map(NonZeroRange::new));
+    let set = CheckSortedDisjoint::new([2..=2, 4..=4].map(NonZeroRange::new));
     assert_eq!(set.is_subset(sup), false);
 }
 
@@ -1636,7 +1636,7 @@ fn from_iter_coverage() {
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 #[allow(clippy::unwrap_used)]
 fn print_first_complement_gap() {
-    let a = CheckSortedDisjoint::new([-10i16..=0, 1000..=2000]);
+    let a = CheckSortedDisjoint::new([-10i16..=0, 1000..=2000].map(NonZeroRange::new));
     println!("{:?}", (!a).next().unwrap()); // prints -32768..=-11
 }
 
@@ -1970,13 +1970,13 @@ fn test_every_sorted_disjoint_method() {
 
     macro_rules! fresh_instances {
         () => {{
-            let a: CheckSortedDisjoint<_, _> = CheckSortedDisjoint::new([1..=2, 5..=100]);
+            let a: CheckSortedDisjoint<_, _> = CheckSortedDisjoint::new([1..=2, 5..=100].map(NonZeroRange::new));
             let b: DynSortedDisjoint<'_, _> =
                 DynSortedDisjoint::new(RangeSetBlaze::from_iter([1..=2, 5..=100]).into_ranges());
             let c: IntoRangesIter<_> = c0.clone().into_ranges();
             let d: MapIntoRangesIter<_, _> = c1.clone().into_ranges();
             let e: MapRangesIter<'_, _, _> = c1.ranges();
-            let f: NotIter<_, _> = !!CheckSortedDisjoint::new([1..=2, 5..=100]);
+            let f: NotIter<_, _> = !!CheckSortedDisjoint::new([1..=2, 5..=100].map(NonZeroRange::new));
             let g: RangesIter<'_, _> = c0.ranges();
             let h: SymDiffIter<_, _> = c0.ranges() ^ c0.ranges() ^ c0.ranges();
             let i: UnionIter<_, _> = c0.ranges() | c0.ranges();
@@ -1989,35 +1989,35 @@ fn test_every_sorted_disjoint_method() {
     syntactic_for! { sd in [a, b, c, d, e, f, g, h, i] {$(
         let z = ! $sd;
         // println!("{:?}", z.into_string());
-        assert!(z.equal(CheckSortedDisjoint::new([-2_147_483_648..=0, 3..=4, 101..=2_147_483_647])));
+        assert!(z.equal(CheckSortedDisjoint::new([-2_147_483_648..=0, 3..=4, 101..=2_147_483_647].map(NonZeroRange::new))));
     )*}}
 
     let (a, b, c, d, e, f, g, h, i) = fresh_instances!();
     syntactic_for! { sd in [a, b, c, d, e, f, g, h, i] {$(
-        let z = CheckSortedDisjoint::new([-1..=0, 50..=50,1000..=10_000]);
+        let z = CheckSortedDisjoint::new([-1..=0, 50..=50,1000..=10_000].map(NonZeroRange::new));
         let z = $sd | z;
-        assert!(z.equal(CheckSortedDisjoint::new([-1..=2, 5..=100, 1000..=10000])));
+        assert!(z.equal(CheckSortedDisjoint::new([-1..=2, 5..=100, 1000..=10000].map(NonZeroRange::new))));
     )*}}
 
     let (a, b, c, d, e, f, g, h, i) = fresh_instances!();
     syntactic_for! { sd in [a, b, c, d, e, f, g, h, i] {$(
-        let z = CheckSortedDisjoint::new([-1..=0, 50..=50,1000..=10_000]);
+        let z = CheckSortedDisjoint::new([-1..=0, 50..=50,1000..=10_000].map(NonZeroRange::new));
         let z = $sd & z;
-        assert!(z.equal(CheckSortedDisjoint::new([50..=50])));
+        assert!(z.equal(CheckSortedDisjoint::new([50..=50].map(NonZeroRange::new))));
     )*}}
 
     let (a, b, c, d, e, f, g, h, i) = fresh_instances!();
     syntactic_for! { sd in [a, b, c, d, e, f, g, h, i] {$(
-        let z = CheckSortedDisjoint::new([-1..=0, 50..=50,1000..=10_000]);
+        let z = CheckSortedDisjoint::new([-1..=0, 50..=50,1000..=10_000].map(NonZeroRange::new));
         let z = $sd ^ z;
-        assert!(z.equal(CheckSortedDisjoint::new([-1..=2, 5..=49, 51..=100, 1000..=10000])));
+        assert!(z.equal(CheckSortedDisjoint::new([-1..=2, 5..=49, 51..=100, 1000..=10000].map(NonZeroRange::new))));
     )*}}
 
     let (a, b, c, d, e, f, g, h, i) = fresh_instances!();
     syntactic_for! { sd in [a, b, c, d, e, f, g, h, i] {$(
-        let z = CheckSortedDisjoint::new([-1..=0, 50..=50,1000..=10_000]);
+        let z = CheckSortedDisjoint::new([-1..=0, 50..=50,1000..=10_000].map(NonZeroRange::new));
         let z = $sd - z;
-        assert!(z.equal(CheckSortedDisjoint::new([1..=2, 5..=49, 51..=100])));
+        assert!(z.equal(CheckSortedDisjoint::new([1..=2, 5..=49, 51..=100].map(NonZeroRange::new))));
     )*}}
 
     // FusedIterator
@@ -2047,21 +2047,22 @@ fn test_from_empty_range() {
 #[should_panic(expected = "start must be less or equal to end")]
 #[allow(clippy::reversed_empty_ranges)]
 fn test_from_sorted_disjoint_empty_array() {
-    RangeSetBlaze::from_sorted_disjoint(CheckSortedDisjoint::new([6..=5]));
+    RangeSetBlaze::from_sorted_disjoint(CheckSortedDisjoint::new([NonZeroRange::new(6..=5)]));
 }
 
 #[test]
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn test_range_once_from() {
-    let mut r: RangeOnce<_> = (0..=15).into();
-    assert_eq!(r.next(), Some(0..=15));
+    let mut r: RangeOnce<_> = NonZeroRange::new(0..=15).into();
+    assert_eq!(r.next(), Some(NonZeroRange::new(0..=15)));
 }
 
 #[test]
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+#[should_panic]
 #[allow(clippy::reversed_empty_ranges)]
 fn test_range_once_empty() {
-    assert_eq!(RangeOnce::new(6..=5).next(), None);
+    let _ = RangeOnce::new(NonZeroRange::new(6..=5));
 }
 
 #[test]
@@ -2070,7 +2071,7 @@ fn test_range_once_empty() {
 fn test_range_once_sorted_disjoint() {
     macro_rules! testiter {
         () => {
-            RangeOnce::new(10..=20)
+            RangeOnce::new(NonZeroRange::new(10..=20))
         };
     }
 
@@ -2079,13 +2080,13 @@ fn test_range_once_sorted_disjoint() {
     assert!((!testiter!()).equal(CheckSortedDisjoint::new([
         -2_147_483_648..=9,
         21..=2_147_483_647
-    ])));
-    assert!((testiter!() | RangeOnce::new(15..=25)).equal(RangeOnce::new(10..=25)));
-    assert!((testiter!() & RangeOnce::new(15..=25)).equal(RangeOnce::new(15..=20)));
+    ].map(NonZeroRange::new))));
+    assert!((testiter!() | RangeOnce::new(NonZeroRange::new(15..=25))).equal(RangeOnce::new(NonZeroRange::new(10..=25))));
+    assert!((testiter!() & RangeOnce::new(NonZeroRange::new(15..=25))).equal(RangeOnce::new(NonZeroRange::new(15..=20))));
     assert!(
-        (testiter!() ^ RangeOnce::new(15..=25)).equal(CheckSortedDisjoint::new([10..=14, 21..=25]))
+        (testiter!() ^ RangeOnce::new(NonZeroRange::new(15..=25))).equal(CheckSortedDisjoint::new([10..=14, 21..=25].map(NonZeroRange::new)))
     );
-    assert!((testiter!() - RangeOnce::new(15..=25)).equal(CheckSortedDisjoint::new([10..=14])));
+    assert!((testiter!() - RangeOnce::new(NonZeroRange::new(15..=25))).equal(CheckSortedDisjoint::new([10..=14].map(NonZeroRange::new))));
 
     fn is_fused<T: FusedIterator>(_iter: T) {}
     is_fused::<_>(testiter!());
@@ -2172,7 +2173,7 @@ fn test_every_union() {
     // extend x 2
     let mut a = RangeSetBlaze::from_iter([1..=6, 8..=9, 11..=15]);
     let b = RangeSetBlaze::from_iter([5..=13, 18..=29]);
-    a.extend(b.ranges());
+    a.extend(b.ranges().map(|r| r.start..=r.end.sub_one()));
     assert_eq!(a, RangeSetBlaze::from_iter([1..=15, 18..=29]));
     let mut a = RangeSetBlaze::from_iter([1..=6, 8..=9, 11..=15]);
     a.extend(b.iter());
@@ -2474,7 +2475,7 @@ fn lib_coverage_6() {
 #[test]
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn not_iter_coverage_0() {
-    let a = CheckSortedDisjoint::new([1..=2, 5..=100]);
+    let a = CheckSortedDisjoint::new([1..=2, 5..=100].map(NonZeroRange::new));
     let n = !a;
     let p = n.clone();
     let m = p.clone();
@@ -2488,16 +2489,16 @@ fn sorted_disjoint_coverage_0() {
     let a = CheckSortedDisjoint::<i32, _>::default();
     assert!(a.is_empty());
 
-    let a = CheckSortedDisjoint::new([1..=2, 5..=100]);
-    let b = CheckSortedDisjoint::new([1..=2, 5..=100]);
-    assert!((a & b).equal(CheckSortedDisjoint::new([1..=2, 5..=100])));
+    let a = CheckSortedDisjoint::new([1..=2, 5..=100].map(NonZeroRange::new));
+    let b = CheckSortedDisjoint::new([1..=2, 5..=100].map(NonZeroRange::new));
+    assert!((a & b).equal(CheckSortedDisjoint::new([1..=2, 5..=100].map(NonZeroRange::new))));
 
-    let a = CheckSortedDisjoint::new([1..=2, 5..=100]);
-    let b = CheckSortedDisjoint::new([1..=2, 5..=100]);
+    let a = CheckSortedDisjoint::new([1..=2, 5..=100].map(NonZeroRange::new));
+    let b = CheckSortedDisjoint::new([1..=2, 5..=100].map(NonZeroRange::new));
     assert!((a - b).is_empty());
 
-    let a = CheckSortedDisjoint::new([1..=2, 5..=100]);
-    let b = CheckSortedDisjoint::new([1..=2, 5..=100]);
+    let a = CheckSortedDisjoint::new([1..=2, 5..=100].map(NonZeroRange::new));
+    let b = CheckSortedDisjoint::new([1..=2, 5..=100].map(NonZeroRange::new));
     assert!((a ^ b).is_empty());
 }
 
@@ -2510,11 +2511,11 @@ fn sorted_disjoint_coverage_1() {
     }
     impl FusedIterator for SomeAfterNone {}
     impl Iterator for SomeAfterNone {
-        type Item = RangeInclusive<i32>;
+        type Item = NonZeroRange<i32>;
         fn next(&mut self) -> Option<Self::Item> {
             self.a += 1;
             if self.a % 2 == 0 {
-                Some(self.a..=self.a)
+                Some(NonZeroRange::new(self.a..=self.a))
             } else {
                 None
             }
@@ -2532,7 +2533,7 @@ fn sorted_disjoint_coverage_1() {
 #[should_panic(expected = "start must be less or equal to end")]
 fn sorted_disjoint_coverage_2() {
     #[allow(clippy::reversed_empty_ranges)]
-    let mut a = CheckSortedDisjoint::new([1..=0]);
+    let mut a = CheckSortedDisjoint::new([NonZeroRange::new(1..=0)]);
     a.next();
 }
 
@@ -2541,7 +2542,7 @@ fn sorted_disjoint_coverage_2() {
 #[should_panic(expected = "ranges must be disjoint")]
 fn sorted_disjoint_coverage_3() {
     #[allow(clippy::reversed_empty_ranges)]
-    let mut a = CheckSortedDisjoint::new([1..=1, 2..=2]);
+    let mut a = CheckSortedDisjoint::new([1..=1, 2..=2].map(NonZeroRange::new));
     a.next();
     a.next();
 }
@@ -2550,15 +2551,15 @@ fn sorted_disjoint_coverage_3() {
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn sorted_disjoint_coverage_4() {
     #[allow(clippy::reversed_empty_ranges)]
-    let mut a = CheckSortedDisjoint::new([0..=i128::MAX]);
+    let mut a = CheckSortedDisjoint::new([0..=i128::MAX].map(NonZeroRange::new));
     a.next();
 }
 
 #[test]
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn sorted_disjoint_iterator_coverage_0() {
-    let a = CheckSortedDisjoint::new([1..=2, 5..=100]);
-    let b = CheckSortedDisjoint::new([1..=2, 5..=101]);
+    let a = CheckSortedDisjoint::new([1..=2, 5..=100].map(NonZeroRange::new));
+    let b = CheckSortedDisjoint::new([1..=2, 5..=101].map(NonZeroRange::new));
     assert!(b.is_superset(a));
 }
 
@@ -2832,7 +2833,7 @@ fn set_random_symmetric_difference() {
             for range in symmetric_difference {
                 // println!();
                 // print!("removing ");
-                for k in range {
+                for k in range.start..range.end {
                     let get0 = set0.get(k);
                     let get1 = set1.get(k);
                     match (get0, get1) {
@@ -2914,9 +2915,9 @@ fn test_next_back() {
 fn test_into_ranges_iter() {
     let mut a = RangeSetBlaze::from_iter([1..=2, 5..=100]).into_ranges();
     assert_eq!(a.len(), 2);
-    assert_eq!(a.next_back(), Some(5..=100));
+    assert_eq!(a.next_back(), Some(NonZeroRange::new(5..=100)));
     assert_eq!(a.len(), 1);
-    assert_eq!(a.next_back(), Some(1..=2));
+    assert_eq!(a.next_back(), Some(NonZeroRange::new(1..=2)));
     assert_eq!(a.len(), 0);
     assert_eq!(a.next_back(), None);
 }
@@ -2962,7 +2963,7 @@ fn test_rog_coverage2() {
 #[test]
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn test_assume_sorted_starts_size_hint() {
-    let m = AssumeSortedStarts::new([0..=3, 0..=2, 1..=5]);
+    let m = AssumeSortedStarts::new([0..=3, 0..=2, 1..=5].map(NonZeroRange::new));
     assert_eq!(m.size_hint(), (3, Some(3)));
 }
 
@@ -3138,7 +3139,7 @@ const fn check_traits() {
     type ACheckSortedDisjoint<'a> = CheckSortedDisjoint<i32, ARangesIter<'a>>;
     is_sssu::<ACheckSortedDisjoint<'_>>();
     type BCheckSortedDisjoint =
-        CheckSortedDisjoint<i32, std::array::IntoIter<RangeInclusive<i32>, 0>>;
+        CheckSortedDisjoint<i32, std::array::IntoIter<NonZeroRange<i32>, 0>>;
     is_like_check_sorted_disjoint::<BCheckSortedDisjoint>();
 
     type ADynSortedDisjoint<'a> = DynSortedDisjoint<'a, i32>;
@@ -3241,7 +3242,7 @@ fn test_multiway() {
 #[test]
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn test_deprecated_to_string() {
-    let a = CheckSortedDisjoint::new([1..=6, 8..=9, 11..=15]);
+    let a = CheckSortedDisjoint::new([1..=6, 8..=9, 11..=15].map(NonZeroRange::new));
     assert_eq!(a.to_string(), "1..=6, 8..=9, 11..=15");
 }
 

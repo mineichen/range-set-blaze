@@ -25,7 +25,7 @@ use gen_ops::gen_ops_ex;
 
 use crate::ranges_iter::RangesIter;
 use crate::unsorted_disjoint::{SortedDisjointWithLenSoFar, UnsortedDisjoint};
-use crate::{Integer, prelude::*};
+use crate::{Integer, NonZeroRange, prelude::*};
 use crate::{IntoRangesIter, UnionIter};
 
 // // FUTURE: use fn range to implement one-at-a-time intersection, difference, etc. and then add more inplace ops.
@@ -170,8 +170,8 @@ where
 ///
 /// // If we know the ranges are already sorted and disjoint,
 /// // we can avoid work and use 'from_sorted_disjoint'/'into_range_set_blaze'.
-/// let a0 = RangeSetBlaze::from_sorted_disjoint(CheckSortedDisjoint::new([-10..=-5, 1..=2]));
-/// let a1: RangeSetBlaze<i32> = CheckSortedDisjoint::new([-10..=-5, 1..=2]).into_range_set_blaze();
+/// let a0 = RangeSetBlaze::from_sorted_disjoint(CheckSortedDisjoint::new([NonZeroRange::new(-10..=-5), NonZeroRange::new(1..=2)]));
+/// let a1: RangeSetBlaze<i32> = CheckSortedDisjoint::new([NonZeroRange::new(-10..=-5), NonZeroRange::new(1..=2)]).into_range_set_blaze();
 /// assert!(a0 == a1 && a0.to_string() == "-10..=-5, 1..=2");
 ///
 /// // For compatibility with `BTreeSet`, we also support
@@ -250,7 +250,7 @@ where
 /// let result = !&a; // Alternatively, '!a'.
 /// assert_eq!(
 ///     result.to_string(),
-///     "-2147483648..=0, 3..=4, 101..=2147483647"
+///     "-2147483648..=0, 3..=4, 101..=2147483646"
 /// );
 ///
 /// // Multiway union of 'RangeSetBlaze's.
@@ -324,7 +324,15 @@ impl<T: Integer> fmt::Debug for RangeSetBlaze<T> {
 
 impl<T: Integer> fmt::Display for RangeSetBlaze<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.ranges().into_string())
+        let mut first = true;
+        for (start, end) in &self.btree_map {
+            if !first {
+                write!(f, ", ")?;
+            }
+            write!(f, "{start:?}..={end:?}")?;
+            first = false;
+        }
+        Ok(())
     }
 }
 
@@ -444,8 +452,8 @@ impl<T: Integer> RangeSetBlaze<T> {
     /// ```
     /// use range_set_blaze::prelude::*;
     ///
-    /// let a0 = RangeSetBlaze::from_sorted_disjoint(CheckSortedDisjoint::new([-10..=-5, 1..=2]));
-    /// let a1: RangeSetBlaze<i32> = CheckSortedDisjoint::new([-10..=-5, 1..=2]).into_range_set_blaze();
+    /// let a0 = RangeSetBlaze::from_sorted_disjoint(CheckSortedDisjoint::new([NonZeroRange::new(-10..=-5), NonZeroRange::new(1..=2)]));
+    /// let a1: RangeSetBlaze<i32> = CheckSortedDisjoint::new([NonZeroRange::new(-10..=-5), NonZeroRange::new(1..=2)]).into_range_set_blaze();
     /// assert!(a0 == a1 && a0.to_string() == "-10..=-5, 1..=2");
     /// ```
     pub fn from_sorted_disjoint<I>(iter: I) -> Self
@@ -535,7 +543,7 @@ impl<T: Integer> RangeSetBlaze<T> {
     /// ```
     pub fn append(&mut self, other: &mut Self) {
         for range in other.ranges() {
-            self.internal_add(range);
+            self.internal_add(range.start..=range.end.sub_one());
         }
         other.clear();
     }
@@ -588,13 +596,16 @@ impl<T: Integer> RangeSetBlaze<T> {
     /// let mut v = RangeSetBlaze::<u8>::new();
     /// assert!(!v.is_universal());
     ///
-    /// let universal = !RangeSetBlaze::<u8>::new();
+    /// let universal = RangeSetBlaze::from_iter([0u8..=255]);
     /// assert!(universal.is_universal());
     /// ```
     #[must_use]
     #[inline]
     pub fn is_universal(&self) -> bool {
-        self.ranges().is_universal()
+        self.btree_map.len() == 1
+            && self.btree_map.iter().next().is_some_and(|(start, end)| {
+                *start == T::min_value() && *end == T::max_value()
+            })
     }
 
     /// Returns `true` if the set is a subset of another,
@@ -782,7 +793,7 @@ impl<T: Integer> RangeSetBlaze<T> {
     /// for elem in set.range((Included(4), Included(8))) {
     ///     println!("{elem}");
     /// }
-    /// assert_eq!(Some(5), set.range(4..).next());
+    /// assert_eq!(Some(5), set.range(4..=10).next());
     /// ```
     pub fn range<R>(&self, range: R) -> IntoIter<T>
     where
@@ -794,8 +805,19 @@ impl<T: Integer> RangeSetBlaze<T> {
             "start (inclusive) must be less than or equal to end (inclusive)"
         );
 
-        let bounds = CheckSortedDisjoint::new([start..=end]);
-        Self::from_sorted_disjoint(self.ranges() & bounds).into_iter()
+        if let Some(end_exclusive) = end.checked_add_one() {
+            let bounds = CheckSortedDisjoint::new([unsafe {
+                NonZeroRange::new_unchecked(start..end_exclusive)
+            }]);
+            Self::from_sorted_disjoint(self.ranges() & bounds).into_iter()
+        } else {
+            let mut result = self.clone();
+            if start > T::min_value() {
+                let below = Self::from_iter([T::min_value()..=start.sub_one()]);
+                result = &result - &below;
+            }
+            result.into_iter()
+        }
     }
 
     /// Adds a range to the set.
@@ -1160,24 +1182,24 @@ impl<T: Integer> RangeSetBlaze<T> {
     /// # Examples
     ///
     /// ```
-    /// use range_set_blaze::RangeSetBlaze;
+    /// use range_set_blaze::prelude::*;
     ///
     /// let set = RangeSetBlaze::from_iter([10..=20, 15..=25, 30..=40]);
     /// let mut ranges = set.ranges();
-    /// assert_eq!(ranges.next(), Some(10..=25));
-    /// assert_eq!(ranges.next(), Some(30..=40));
+    /// assert_eq!(ranges.next(), Some(NonZeroRange::new(10..=25)));
+    /// assert_eq!(ranges.next(), Some(NonZeroRange::new(30..=40)));
     /// assert_eq!(ranges.next(), None);
     /// ```
     ///
     /// Values returned by the iterator are returned in ascending order:
     ///
     /// ```
-    /// use range_set_blaze::RangeSetBlaze;
+    /// use range_set_blaze::prelude::*;
     ///
     /// let set = RangeSetBlaze::from_iter([30..=40, 15..=25, 10..=20]);
     /// let mut ranges = set.ranges();
-    /// assert_eq!(ranges.next(), Some(10..=25));
-    /// assert_eq!(ranges.next(), Some(30..=40));
+    /// assert_eq!(ranges.next(), Some(NonZeroRange::new(10..=25)));
+    /// assert_eq!(ranges.next(), Some(NonZeroRange::new(30..=40)));
     /// assert_eq!(ranges.next(), None);
     /// ```
     pub fn ranges(&self) -> RangesIter<'_, T> {
@@ -1194,22 +1216,22 @@ impl<T: Integer> RangeSetBlaze<T> {
     /// # Examples
     ///
     /// ```
-    /// use range_set_blaze::RangeSetBlaze;
+    /// use range_set_blaze::prelude::*;
     ///
     /// let mut ranges = RangeSetBlaze::from_iter([10..=20, 15..=25, 30..=40]).into_ranges();
-    /// assert_eq!(ranges.next(), Some(10..=25));
-    /// assert_eq!(ranges.next(), Some(30..=40));
+    /// assert_eq!(ranges.next(), Some(NonZeroRange::new(10..=25)));
+    /// assert_eq!(ranges.next(), Some(NonZeroRange::new(30..=40)));
     /// assert_eq!(ranges.next(), None);
     /// ```
     ///
     /// Values returned by the iterator are returned in ascending order:
     ///
     /// ```
-    /// use range_set_blaze::RangeSetBlaze;
+    /// use range_set_blaze::prelude::*;
     ///
     /// let mut ranges = RangeSetBlaze::from_iter([30..=40, 15..=25, 10..=20]).into_ranges();
-    /// assert_eq!(ranges.next(), Some(10..=25));
-    /// assert_eq!(ranges.next(), Some(30..=40));
+    /// assert_eq!(ranges.next(), Some(NonZeroRange::new(10..=25)));
+    /// assert_eq!(ranges.next(), Some(NonZeroRange::new(30..=40)));
     /// assert_eq!(ranges.next(), None);
     /// ```
     pub fn into_ranges(self) -> IntoRangesIter<T> {
@@ -1368,6 +1390,37 @@ impl<T: Integer> FromIterator<RangeInclusive<T>> for RangeSetBlaze<T> {
     where
         I: IntoIterator<Item = RangeInclusive<T>>,
     {
+        let mut has_max = false;
+        let mut max_start = T::max_value();
+        let union_iter: UnionIter<T, _> = iter.into_iter().filter_map(|r| {
+            let (start, end) = r.into_inner();
+            if start <= end {
+                if let Some(end_exclusive) = end.checked_add_one() {
+                    Some(unsafe { NonZeroRange::new_unchecked(start..end_exclusive) })
+                } else {
+                    if !has_max || start < max_start {
+                        max_start = start;
+                    }
+                    has_max = true;
+                    None
+                }
+            } else {
+                None
+            }
+        }).collect();
+        let mut result = Self::from_sorted_disjoint(union_iter);
+        if has_max {
+            result.internal_add(max_start..=T::max_value());
+        }
+        result
+    }
+}
+
+impl<T: Integer> FromIterator<NonZeroRange<T>> for RangeSetBlaze<T> {
+    fn from_iter<I>(iter: I) -> Self
+    where
+        I: IntoIterator<Item = NonZeroRange<T>>,
+    {
         let union_iter: UnionIter<T, _> = iter.into_iter().collect();
         Self::from_sorted_disjoint(union_iter)
     }
@@ -1394,8 +1447,29 @@ impl<'a, T: Integer> FromIterator<&'a RangeInclusive<T>> for RangeSetBlaze<T> {
     where
         I: IntoIterator<Item = &'a RangeInclusive<T>>,
     {
-        let union_iter: UnionIter<T, _> = iter.into_iter().cloned().collect();
-        Self::from_sorted_disjoint(union_iter)
+        let mut has_max = false;
+        let mut max_start = T::max_value();
+        let union_iter: UnionIter<T, _> = iter.into_iter().cloned().filter_map(|r| {
+            let (start, end) = r.into_inner();
+            if start <= end {
+                if let Some(end_exclusive) = end.checked_add_one() {
+                    Some(unsafe { NonZeroRange::new_unchecked(start..end_exclusive) })
+                } else {
+                    if !has_max || start < max_start {
+                        max_start = start;
+                    }
+                    has_max = true;
+                    None
+                }
+            } else {
+                None
+            }
+        }).collect();
+        let mut result = Self::from_sorted_disjoint(union_iter);
+        if has_max {
+            result.internal_add(max_start..=T::max_value());
+        }
+        result
     }
 }
 
@@ -1428,7 +1502,13 @@ impl<T: Integer, const N: usize> From<[T; N]> for RangeSetBlaze<T> {
 impl<T: Integer> From<RangeInclusive<T>> for RangeSetBlaze<T> {
     /// Construct a [`RangeSetBlaze<T>`] directly from a [`RangeInclusive<T>`].
     fn from(value: RangeInclusive<T>) -> Self {
-        Self::from_sorted_disjoint(RangeOnce::new(value))
+        let (start, end) = value.into_inner();
+        if start > end {
+            return Self::new();
+        }
+        Self::from_sorted_disjoint(RangeOnce::new(unsafe {
+            NonZeroRange::new_unchecked(start..end.add_one())
+        }))
     }
 }
 
@@ -1505,7 +1585,7 @@ gen_ops_ex!(
     /// let result = !&a; // Alternatively, '!a'.
     /// assert_eq!(
     ///     result.to_string(),
-    ///     "-2147483648..=0, 3..=4, 101..=2147483647"
+    ///     "-2147483648..=0, 3..=4, 101..=2147483646"
     /// );
     /// ```
     for ! call |a: &RangeSetBlaze<T>| {
@@ -1588,11 +1668,10 @@ where
             return Some(next_item);
         }
 
-        // if range_front is exhausted, get the next range from the btree_set_iter and its next integer
         if let Some(next_range) = self.btree_set_iter.next() {
-            debug_assert!(next_range.start() <= next_range.end()); // real assert
-            self.range_front = next_range;
-            return T::range_next(&mut self.range_front); // will never be None
+            debug_assert!(next_range.start < next_range.end);
+            self.range_front = next_range.start..=next_range.end.sub_one();
+            return T::range_next(&mut self.range_front);
         }
 
         // if that doesn't work, move the back range to the front and get the next integer (if any)
@@ -1618,11 +1697,10 @@ where
             return Some(next_item);
         }
 
-        // if the range_back is exhausted, get the next_back range from the btree_set_iter and its next_back integer
         if let Some(next_back_range) = self.btree_set_iter.next_back() {
-            debug_assert!(next_back_range.start() <= next_back_range.end()); // real assert
-            self.range_back = next_back_range;
-            return T::range_next_back(&mut self.range_back); // will never be None
+            debug_assert!(next_back_range.start < next_back_range.end);
+            self.range_back = next_back_range.start..=next_back_range.end.sub_one();
+            return T::range_next_back(&mut self.range_back);
         }
 
         // if that doesn't work, move the front range to the back and get the next back integer (if any)
@@ -1728,8 +1806,10 @@ impl<T: Integer> Extend<T> for RangeSetBlaze<T> {
         I: IntoIterator<Item = T>,
     {
         let iter = iter.into_iter();
-        for range in UnsortedDisjoint::new(iter.map(|x| x..=x)) {
-            self.internal_add(range);
+        for range in UnsortedDisjoint::new(iter.map(|x| unsafe {
+            NonZeroRange::new_unchecked(x..x.add_one())
+        })) {
+            self.internal_add(range.start..=range.end.sub_one());
         }
     }
 }
@@ -1935,10 +2015,30 @@ impl<T: Integer> Extend<RangeInclusive<T>> for RangeSetBlaze<T> {
     where
         I: IntoIterator<Item = RangeInclusive<T>>,
     {
-        let iter = iter.into_iter();
+        let mut has_max = false;
+        let mut max_start = T::max_value();
+        let iter = iter.into_iter().filter_map(|r| {
+            let (start, end) = r.into_inner();
+            if start <= end {
+                if let Some(end_exclusive) = end.checked_add_one() {
+                    Some(unsafe { NonZeroRange::new_unchecked(start..end_exclusive) })
+                } else {
+                    if !has_max || start < max_start {
+                        max_start = start;
+                    }
+                    has_max = true;
+                    None
+                }
+            } else {
+                None
+            }
+        });
         let iter = UnsortedDisjoint::new(iter);
         for range in iter {
-            self.internal_add(range);
+            self.internal_add(range.start..=range.end.sub_one());
+        }
+        if has_max {
+            self.internal_add(max_start..=T::max_value());
         }
     }
 }
@@ -1979,11 +2079,11 @@ impl<T: Integer> Ord for RangeSetBlaze<T> {
         loop {
             match (a_rx, b_rx) {
                 (Some(a_r), Some(b_r)) => {
-                    let cmp_start = a_r.start().cmp(b_r.start());
+                    let cmp_start = a_r.start.cmp(&b_r.start);
                     if cmp_start != Ordering::Equal {
                         return cmp_start;
                     }
-                    let cmp_end = a_r.end().cmp(b_r.end());
+                    let cmp_end = a_r.end.cmp(&b_r.end);
                     match cmp_end {
                         Ordering::Equal => {
                             a_rx = a.next();
@@ -1991,10 +2091,14 @@ impl<T: Integer> Ord for RangeSetBlaze<T> {
                         }
                         Ordering::Less => {
                             a_rx = a.next();
-                            b_rx = Some((*a_r.end()).add_one()..=*b_r.end());
+                            b_rx = Some(unsafe {
+                                NonZeroRange::new_unchecked(a_r.end..b_r.end)
+                            });
                         }
                         Ordering::Greater => {
-                            a_rx = Some((*b_r.end()).add_one()..=*a_r.end());
+                            a_rx = Some(unsafe {
+                                NonZeroRange::new_unchecked(b_r.end..a_r.end)
+                            });
                             b_rx = b.next();
                         }
                     }

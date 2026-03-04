@@ -3,8 +3,9 @@ use crate::{
     map::ValueRef,
     sorted_disjoint_map::{Priority, PrioritySortedStartsMap},
 };
+use crate::NonZeroRange;
 use alloc::{collections::btree_map, rc::Rc};
-use core::{iter::FusedIterator, marker::PhantomData, ops::RangeInclusive};
+use core::{iter::FusedIterator, marker::PhantomData};
 
 use crate::{map::EndValue, sorted_disjoint_map::SortedDisjointMap};
 
@@ -41,12 +42,15 @@ where
     T: Integer,
     V: Eq + Clone + 'a,
 {
-    type Item = (RangeInclusive<T>, &'a V); // Assuming VR is always &'a V for next
+    type Item = (NonZeroRange<T>, &'a V);
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter
-            .next()
-            .map(|(start, end_value)| (*start..=end_value.end, &end_value.value))
+        self.iter.next().map(|(start, end_value)| {
+            (
+                unsafe { NonZeroRange::new_unchecked(*start..end_value.end.add_one()) },
+                &end_value.value,
+            )
+        })
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -60,9 +64,12 @@ where
     V: Eq + Clone + 'a,
 {
     fn next_back(&mut self) -> Option<Self::Item> {
-        self.iter
-            .next_back()
-            .map(|(start, end_value)| (*start..=end_value.end, &end_value.value))
+        self.iter.next_back().map(|(start, end_value)| {
+            (
+                unsafe { NonZeroRange::new_unchecked(*start..end_value.end.add_one()) },
+                &end_value.value,
+            )
+        })
     }
 }
 
@@ -97,11 +104,11 @@ impl<T: Integer, V: Eq + Clone> ExactSizeIterator for IntoRangeValuesIter<T, V> 
 impl<T: Integer, V: Eq + Clone> FusedIterator for IntoRangeValuesIter<T, V> {}
 
 impl<T: Integer, V: Eq + Clone> Iterator for IntoRangeValuesIter<T, V> {
-    type Item = (RangeInclusive<T>, Rc<V>);
+    type Item = (NonZeroRange<T>, Rc<V>);
 
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.next().map(|(start, end_value)| {
-            let range = start..=end_value.end;
+            let range = unsafe { NonZeroRange::new_unchecked(start..end_value.end.add_one()) };
             let value = Rc::new(end_value.value);
             (range, value)
         })
@@ -115,7 +122,7 @@ impl<T: Integer, V: Eq + Clone> Iterator for IntoRangeValuesIter<T, V> {
 impl<T: Integer, V: Eq + Clone> DoubleEndedIterator for IntoRangeValuesIter<T, V> {
     fn next_back(&mut self) -> Option<Self::Item> {
         self.iter.next_back().map(|(start, end_value)| {
-            let range = start..=end_value.end;
+            let range = unsafe { NonZeroRange::new_unchecked(start..end_value.end.add_one()) };
             let value = Rc::new(end_value.value);
             (range, value)
         })
@@ -131,7 +138,7 @@ impl<T: Integer, V: Eq + Clone> DoubleEndedIterator for IntoRangeValuesIter<T, V
 #[must_use = "iterators are lazy and do nothing unless consumed"]
 pub struct MapRangesIter<'a, T: Integer, V: Eq + Clone> {
     iter: btree_map::Iter<'a, T, EndValue<T, V>>,
-    gather: Option<RangeInclusive<T>>,
+    gather: Option<NonZeroRange<T>>,
 }
 
 impl<'a, T: Integer, V: Eq + Clone> MapRangesIter<'a, T, V> {
@@ -148,40 +155,37 @@ where
     T: Integer,
     V: Eq + Clone + 'a,
 {
-    type Item = RangeInclusive<T>;
+    type Item = NonZeroRange<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            // If no next, return gather, if any.
             let Some((start, end_value)) = self.iter.next() else {
                 return self.gather.take();
             };
 
-            let (start_next, end_next) = (*start, end_value.end);
-            debug_assert!(start_next <= end_next); // real assert
+            let (start_next, end_next) = (*start, end_value.end.add_one());
+            debug_assert!(start_next < end_next);
 
-            // if not gather, start a new gather.
             let Some(gather) = self.gather.take() else {
-                self.gather = Some(start_next..=end_next);
+                self.gather =
+                    Some(unsafe { NonZeroRange::new_unchecked(start_next..end_next) });
                 continue;
             };
 
-            let (gather_start, gather_end) = gather.into_inner();
-
-            // if next is just touching gather, extend gather.
-            if gather_end.add_one() == start_next {
-                self.gather = Some(gather_start..=end_next);
+            if gather.end == start_next {
+                self.gather = Some(unsafe {
+                    NonZeroRange::new_unchecked(gather.start..end_next)
+                });
                 continue;
             }
 
-            // they are disjoint, return gather and start a new gather.
-            self.gather = Some(start_next..=end_next);
-            return Some(gather_start..=gather_end);
+            self.gather =
+                Some(unsafe { NonZeroRange::new_unchecked(start_next..end_next) });
+            return Some(gather);
         }
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        // 'Low' could be 0 if empty or 1 if fully merged.
         (0, self.iter.size_hint().1)
     }
 }
@@ -195,7 +199,7 @@ where
 #[derive(Debug)]
 pub struct MapIntoRangesIter<T: Integer, V: Eq + Clone> {
     iter: btree_map::IntoIter<T, EndValue<T, V>>,
-    gather: Option<RangeInclusive<T>>,
+    gather: Option<NonZeroRange<T>>,
 }
 
 impl<T: Integer, V: Eq + Clone> MapIntoRangesIter<T, V> {
@@ -207,40 +211,37 @@ impl<T: Integer, V: Eq + Clone> MapIntoRangesIter<T, V> {
 impl<T: Integer, V: Eq + Clone> FusedIterator for MapIntoRangesIter<T, V> {}
 
 impl<T: Integer, V: Eq + Clone> Iterator for MapIntoRangesIter<T, V> {
-    type Item = RangeInclusive<T>;
+    type Item = NonZeroRange<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            // If no next, return gather, if any.
             let Some((start_next, end_value)) = self.iter.next() else {
                 return self.gather.take();
             };
 
-            let end_next = end_value.end;
-            debug_assert!(start_next <= end_next); // real assert
+            let end_next = end_value.end.add_one();
+            debug_assert!(start_next < end_next);
 
-            // if not gather, start a new gather.
             let Some(gather) = self.gather.take() else {
-                self.gather = Some(start_next..=end_next);
+                self.gather =
+                    Some(unsafe { NonZeroRange::new_unchecked(start_next..end_next) });
                 continue;
             };
 
-            let (gather_start, gather_end) = gather.into_inner();
-
-            // if next is just touching gather, extend gather.
-            if gather_end.add_one() == start_next {
-                self.gather = Some(gather_start..=end_next);
+            if gather.end == start_next {
+                self.gather = Some(unsafe {
+                    NonZeroRange::new_unchecked(gather.start..end_next)
+                });
                 continue;
             }
 
-            // they are disjoint, return gather and start a new gather.
-            self.gather = Some(start_next..=end_next);
-            return Some(gather_start..=gather_end);
+            self.gather =
+                Some(unsafe { NonZeroRange::new_unchecked(start_next..end_next) });
+            return Some(gather);
         }
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        // 'Low' could be 0 if empty or 1 if fully merged.
         (0, self.iter.size_hint().1)
     }
 }
@@ -256,7 +257,7 @@ where
     I: SortedDisjointMap<T, VR>,
 {
     iter: I,
-    gather: Option<RangeInclusive<T>>,
+    gather: Option<NonZeroRange<T>>,
     phantom: PhantomData<VR>,
 }
 
@@ -291,32 +292,29 @@ where
     VR: ValueRef,
     I: SortedDisjointMap<T, VR>,
 {
-    type Item = RangeInclusive<T>;
+    type Item = NonZeroRange<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            // If no next value, return gather, if any.
             let Some(next_range_value) = self.iter.next() else {
                 return self.gather.take();
             };
-            let (next_start, next_end) = next_range_value.0.into_inner();
+            let next_range = next_range_value.0;
 
-            // If there is no gather, start a new gather.
             let Some(gather) = self.gather.take() else {
-                self.gather = Some(next_start..=next_end);
+                self.gather = Some(next_range);
                 continue;
             };
-            let (gather_start, gather_end) = gather.into_inner();
 
-            // If next is just touching gather, extend gather.
-            if gather_end.add_one() == next_start {
-                self.gather = Some(gather_start..=next_end);
+            if gather.end == next_range.start {
+                self.gather = Some(unsafe {
+                    NonZeroRange::new_unchecked(gather.start..next_range.end)
+                });
                 continue;
             }
 
-            // They are disjoint, return gather and start a new gather.
-            self.gather = Some(next_start..=next_end);
-            return Some(gather_start..=gather_end);
+            self.gather = Some(next_range);
+            return Some(gather);
         }
     }
 }

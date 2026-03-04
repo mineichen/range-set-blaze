@@ -1,5 +1,5 @@
 use crate::{
-    CheckSortedDisjoint, Integer, IntoKeys, Keys, RangeSetBlaze, SortedDisjoint,
+    CheckSortedDisjoint, Integer, IntoKeys, Keys, NonZeroRange, RangeSetBlaze, SortedDisjoint,
     iter_map::{IntoIterMap, IterMap},
     map_op, map_unary_op,
     range_values::{IntoRangeValuesIter, MapIntoRangesIter, MapRangesIter, RangeValuesIter},
@@ -58,13 +58,13 @@ const STREAM_OVERHEAD: usize = 10;
 /// let b = RangeMapBlaze::from_iter([(2..=3, "b".to_string()), (5..=100, "b".to_string())]);
 ///
 /// let mut c = a.range_values() & b.range_values();
-/// assert_eq!(c.next(), Some((3..=3, &"b".to_string())));
-/// assert_eq!(c.next(), Some((5..=10, &"b".to_string())));
+/// assert_eq!(c.next(), Some((NonZeroRange::new(3..=3), &"b".to_string())));
+/// assert_eq!(c.next(), Some((NonZeroRange::new(5..=10), &"b".to_string())));
 /// assert_eq!(c.next(), None);
 ///
 /// let mut c = a.into_range_values() & b.into_range_values();
-/// assert_eq!(c.next(), Some((3..=3, Rc::new("b".to_string()))));
-/// assert_eq!(c.next(), Some((5..=10, Rc::new("b".to_string()))));
+/// assert_eq!(c.next(), Some((NonZeroRange::new(3..=3), Rc::new("b".to_string()))));
+/// assert_eq!(c.next(), Some((NonZeroRange::new(5..=10), Rc::new("b".to_string()))));
 /// assert_eq!(c.next(), None);
 /// ```
 pub trait ValueRef: Borrow<Self::Target> + Clone {
@@ -256,8 +256,8 @@ where
 ///
 /// // If we know the ranges are already sorted and disjoint,
 /// // we can avoid work and use 'from_sorted_disjoint_map'/'into_sorted_disjoint_map'.
-/// let a0 = RangeMapBlaze::from_sorted_disjoint_map(CheckSortedDisjointMap::new([(-10..=-5, &"c"), (1..=2, &"a")]));
-/// let a1: RangeMapBlaze<i32, &str> = CheckSortedDisjointMap::new([(-10..=-5, &"c"), (1..=2, &"a")]).into_range_map_blaze();
+/// let a0 = RangeMapBlaze::from_sorted_disjoint_map(CheckSortedDisjointMap::new([(NonZeroRange::new(-10..=-5), &"c"), (NonZeroRange::new(1..=2), &"a")]));
+/// let a1: RangeMapBlaze<i32, &str> = CheckSortedDisjointMap::new([(NonZeroRange::new(-10..=-5), &"c"), (NonZeroRange::new(1..=2), &"a")]).into_range_map_blaze();
 /// assert_eq!(a0, a1);
 /// assert_eq!(a0.to_string(),r#"(-10..=-5, "c"), (1..=2, "a")"#);
 ///
@@ -357,11 +357,11 @@ where
 ///
 /// // complement of a 'RangeMapBlaze' is a `RangeSetBlaze`.
 /// let result = !&b; // Alternatively, '!b'.
-/// assert_eq!(result.to_string(), "-2147483648..=0, 3..=4, 101..=2147483647"
+/// assert_eq!(result.to_string(), "-2147483648..=0, 3..=4, 101..=2147483646"
 /// );
 /// // use `complement_with` to create a 'RangeMapBlaze'.
 /// let result = b.complement_with(&"z");
-/// assert_eq!(result.to_string(), r#"(-2147483648..=0, "z"), (3..=4, "z"), (101..=2147483647, "z")"#);
+/// assert_eq!(result.to_string(), r#"(-2147483648..=0, "z"), (3..=4, "z"), (101..=2147483646, "z")"#);
 ///
 /// // Multiway union of 'RangeMapBlaze's.
 /// let z = RangeMapBlaze::from_iter([(2..=2, "z"), (6..=200, "z")]);
@@ -478,7 +478,15 @@ impl<T: Integer, V: Eq + Clone + fmt::Debug> fmt::Debug for RangeMapBlaze<T, V> 
 
 impl<T: Integer, V: Eq + Clone + fmt::Debug> fmt::Display for RangeMapBlaze<T, V> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.range_values().into_string())
+        let mut first = true;
+        for (start, ev) in &self.btree_map {
+            if !first {
+                write!(f, ", ")?;
+            }
+            write!(f, "({start:?}..={:?}, {:?})", ev.end, ev.value)?;
+            first = false;
+        }
+        Ok(())
     }
 }
 
@@ -773,8 +781,8 @@ impl<T: Integer, V: Eq + Clone> RangeMapBlaze<T, V> {
     /// ```
     /// use range_set_blaze::prelude::*;
     ///
-    /// let a0 = RangeMapBlaze::from_sorted_disjoint_map(CheckSortedDisjointMap::new([(-10..=-5, &"a"), (1..=2, &"b")]));
-    /// let a1: RangeMapBlaze<i32,_> = CheckSortedDisjointMap::new([(-10..=-5, &"a"), (1..=2, &"b")]).into_range_map_blaze();
+    /// let a0 = RangeMapBlaze::from_sorted_disjoint_map(CheckSortedDisjointMap::new([(NonZeroRange::new(-10..=-5), &"a"), (NonZeroRange::new(1..=2), &"b")]));
+    /// let a1: RangeMapBlaze<i32,_> = CheckSortedDisjointMap::new([(NonZeroRange::new(-10..=-5), &"a"), (NonZeroRange::new(1..=2), &"b")]).into_range_map_blaze();
     /// assert!(a0 == a1 && a0.to_string() == r#"(-10..=-5, "a"), (1..=2, "b")"#);
     /// ```
     pub fn from_sorted_disjoint_map<VR, I>(iter: I) -> Self
@@ -884,14 +892,13 @@ impl<T: Integer, V: Eq + Clone> RangeMapBlaze<T, V> {
     /// use range_set_blaze::RangeMapBlaze;
     ///
     /// // Multiple ranges covering all values is universal
-    /// let multi_universal = RangeMapBlaze::from_iter([
-    ///     (0_u8..=100, "first"),
-    ///     (101_u8..=255, "second")
-    /// ]);
+    /// let mut multi_universal = RangeMapBlaze::<i8, &str>::new();
+    /// multi_universal.ranges_insert(-128_i8..=0, "first");
+    /// multi_universal.ranges_insert(1_i8..=127, "second");
     /// assert!(multi_universal.is_universal());
     ///
     /// // Incomplete coverage is not universal
-    /// let incomplete = RangeMapBlaze::from_iter([(1_u8..=255, "missing_zero")]);
+    /// let incomplete = RangeMapBlaze::from_iter([(-128_i8..=126, "missing_max")]);
     /// assert!(!incomplete.is_universal());
     /// ```
     #[must_use]
@@ -1045,7 +1052,7 @@ impl<T: Integer, V: Eq + Clone> RangeMapBlaze<T, V> {
     /// for (key, value) in map.range((Included(4), Included(8))) {
     ///     println!("{key}: {value}");
     /// } // prints "5: b" and "8: c"
-    /// assert_eq!(Some((5, "b")), map.range(4..).next());
+    /// assert_eq!(Some((5, "b")), map.range(4..=8).next());
     /// ```
     #[allow(clippy::manual_assert)] // We use "if...panic!" for coverage auditing.
     pub fn range<R>(&self, range: R) -> IntoIterMap<T, V>
@@ -1059,12 +1066,26 @@ impl<T: Integer, V: Eq + Clone> RangeMapBlaze<T, V> {
             "start (inclusive) must be less than or equal to end (inclusive)"
         );
 
-        let bounds = CheckSortedDisjoint::new([start..=end]);
-        let range_map_blaze = self
-            .range_values()
-            .map_and_set_intersection(bounds)
-            .into_range_map_blaze();
-        range_map_blaze.into_iter()
+        if let Some(end_exclusive) = end.checked_add_one() {
+            let bounds = CheckSortedDisjoint::new([unsafe {
+                NonZeroRange::new_unchecked(start..end_exclusive)
+            }]);
+            let range_map_blaze = self
+                .range_values()
+                .map_and_set_intersection(bounds)
+                .into_range_map_blaze();
+            range_map_blaze.into_iter()
+        } else {
+            let mut result = self.clone();
+            if start > T::min_value() {
+                let below_keys = RangeSetBlaze::from_iter([T::min_value()..=start.sub_one()]);
+                result = result
+                    .range_values()
+                    .map_and_set_difference(below_keys.ranges())
+                    .into_range_map_blaze();
+            }
+            result.into_iter()
+        }
     }
 
     /// Adds a range to the set.
@@ -1951,13 +1972,13 @@ impl<T: Integer, V: Eq + Clone> RangeMapBlaze<T, V> {
     /// # Examples
     ///
     /// ```
-    /// use range_set_blaze::RangeMapBlaze;
+    /// use range_set_blaze::{RangeMapBlaze, NonZeroRange};
     ///
     /// let map = RangeMapBlaze::from_iter([(30..=40, "c"), (15..=25, "b"), (10..=20, "a")]);
     /// let mut range_values = map.range_values();
-    /// assert_eq!(range_values.next(), Some((10..=20, &"a")));
-    /// assert_eq!(range_values.next(), Some((21..=25, &"b")));
-    /// assert_eq!(range_values.next(), Some((30..=40, &"c")));
+    /// assert_eq!(range_values.next(), Some((NonZeroRange::new(10..=20), &"a")));
+    /// assert_eq!(range_values.next(), Some((NonZeroRange::new(21..=25), &"b")));
+    /// assert_eq!(range_values.next(), Some((NonZeroRange::new(30..=40), &"c")));
     /// assert_eq!(range_values.next(), None);
     /// ```
     ///
@@ -1965,13 +1986,13 @@ impl<T: Integer, V: Eq + Clone> RangeMapBlaze<T, V> {
     /// with right-to-left precedence.
     ///
     /// ```
-    /// use range_set_blaze::RangeMapBlaze;
+    /// use range_set_blaze::{RangeMapBlaze, NonZeroRange};
     ///
     /// let map = RangeMapBlaze::from_iter([(10..=20, "a"), (15..=25, "b"), (30..=40, "c")]);
     /// let mut range_values = map.range_values();
-    /// assert_eq!(range_values.next(), Some((10..=14, &"a")));
-    /// assert_eq!(range_values.next(), Some((15..=25, &"b")));
-    /// assert_eq!(range_values.next(), Some((30..=40, &"c")));
+    /// assert_eq!(range_values.next(), Some((NonZeroRange::new(10..=14), &"a")));
+    /// assert_eq!(range_values.next(), Some((NonZeroRange::new(15..=25), &"b")));
+    /// assert_eq!(range_values.next(), Some((NonZeroRange::new(30..=40), &"c")));
     /// assert_eq!(range_values.next(), None);
     /// ```
     pub fn range_values(&self) -> RangeValuesIter<'_, T, V> {
@@ -1987,13 +2008,13 @@ impl<T: Integer, V: Eq + Clone> RangeMapBlaze<T, V> {
     /// ```
     /// extern crate alloc;
     /// use alloc::rc::Rc;
-    /// use range_set_blaze::RangeMapBlaze;
+    /// use range_set_blaze::{RangeMapBlaze, NonZeroRange};
     ///
     /// let map = RangeMapBlaze::from_iter([(30..=40, "c"), (15..=25, "b"), (10..=20, "a")]);
     /// let mut range_values = map.into_range_values();
-    /// assert_eq!(range_values.next(), Some((10..=20, Rc::new("a"))));
-    /// assert_eq!(range_values.next(), Some((21..=25, Rc::new("b"))));
-    /// assert_eq!(range_values.next(), Some((30..=40, Rc::new("c"))));
+    /// assert_eq!(range_values.next(), Some((NonZeroRange::new(10..=20), Rc::new("a"))));
+    /// assert_eq!(range_values.next(), Some((NonZeroRange::new(21..=25), Rc::new("b"))));
+    /// assert_eq!(range_values.next(), Some((NonZeroRange::new(30..=40), Rc::new("c"))));
     /// assert_eq!(range_values.next(), None);
     /// ```
     ///
@@ -2003,13 +2024,13 @@ impl<T: Integer, V: Eq + Clone> RangeMapBlaze<T, V> {
     /// ```
     /// # extern crate alloc;
     /// use alloc::rc::Rc;
-    /// use range_set_blaze::RangeMapBlaze;
+    /// use range_set_blaze::{RangeMapBlaze, NonZeroRange};
     ///
     /// let map = RangeMapBlaze::from_iter([(10..=20, "a"), (15..=25, "b"), (30..=40, "c")]);
     /// let mut range_values = map.into_range_values();
-    /// assert_eq!(range_values.next(), Some((10..=14, Rc::new("a"))));
-    /// assert_eq!(range_values.next(), Some((15..=25, Rc::new("b"))));
-    /// assert_eq!(range_values.next(), Some((30..=40, Rc::new("c"))));
+    /// assert_eq!(range_values.next(), Some((NonZeroRange::new(10..=14), Rc::new("a"))));
+    /// assert_eq!(range_values.next(), Some((NonZeroRange::new(15..=25), Rc::new("b"))));
+    /// assert_eq!(range_values.next(), Some((NonZeroRange::new(30..=40), Rc::new("c"))));
     /// assert_eq!(range_values.next(), None);
     /// ```
     pub fn into_range_values(self) -> IntoRangeValuesIter<T, V> {
@@ -2024,12 +2045,12 @@ impl<T: Integer, V: Eq + Clone> RangeMapBlaze<T, V> {
     /// # Examples
     ///
     /// ```
-    /// use range_set_blaze::RangeMapBlaze;
+    /// use range_set_blaze::{RangeMapBlaze, NonZeroRange};
     ///
     /// let map = RangeMapBlaze::from_iter([(10..=20, "a"), (15..=25, "b"), (30..=40, "c")]);
     /// let mut ranges = map.ranges();
-    /// assert_eq!(ranges.next(), Some(10..=25));
-    /// assert_eq!(ranges.next(), Some(30..=40));
+    /// assert_eq!(ranges.next(), Some(NonZeroRange::new(10..=25)));
+    /// assert_eq!(ranges.next(), Some(NonZeroRange::new(30..=40)));
     /// assert_eq!(ranges.next(), None);
     /// ```
     ///
@@ -2037,12 +2058,12 @@ impl<T: Integer, V: Eq + Clone> RangeMapBlaze<T, V> {
     /// with right-to-left precedence.
     ///
     /// ```
-    /// use range_set_blaze::RangeMapBlaze;
+    /// use range_set_blaze::{RangeMapBlaze, NonZeroRange};
     ///
     /// let map = RangeMapBlaze::from_iter([(30..=40, "c"), (15..=25, "b"), (10..=20, "a")]);
     /// let mut ranges = map.ranges();
-    /// assert_eq!(ranges.next(), Some(10..=25));
-    /// assert_eq!(ranges.next(), Some(30..=40));
+    /// assert_eq!(ranges.next(), Some(NonZeroRange::new(10..=25)));
+    /// assert_eq!(ranges.next(), Some(NonZeroRange::new(30..=40)));
     /// assert_eq!(ranges.next(), None);
     /// ```
     pub fn ranges(&self) -> MapRangesIter<'_, T, V> {
@@ -2057,12 +2078,12 @@ impl<T: Integer, V: Eq + Clone> RangeMapBlaze<T, V> {
     /// # Examples
     ///
     /// ```
-    /// use range_set_blaze::RangeMapBlaze;
+    /// use range_set_blaze::{RangeMapBlaze, NonZeroRange};
     ///
     /// let map = RangeMapBlaze::from_iter([(10..=20, "a"), (15..=25, "b"), (30..=40, "c")]);
     /// let mut ranges = map.into_ranges();
-    /// assert_eq!(ranges.next(), Some(10..=25));
-    /// assert_eq!(ranges.next(), Some(30..=40));
+    /// assert_eq!(ranges.next(), Some(NonZeroRange::new(10..=25)));
+    /// assert_eq!(ranges.next(), Some(NonZeroRange::new(30..=40)));
     /// assert_eq!(ranges.next(), None);
     /// ```
     ///
@@ -2070,12 +2091,12 @@ impl<T: Integer, V: Eq + Clone> RangeMapBlaze<T, V> {
     /// with right-to-left precedence.
     ///
     /// ```
-    /// use range_set_blaze::RangeMapBlaze;
+    /// use range_set_blaze::{RangeMapBlaze, NonZeroRange};
     ///
     /// let map = RangeMapBlaze::from_iter([(30..=40, "c"), (15..=25, "b"), (10..=20, "a")]);
     /// let mut ranges = map.into_ranges();
-    /// assert_eq!(ranges.next(), Some(10..=25));
-    /// assert_eq!(ranges.next(), Some(30..=40));
+    /// assert_eq!(ranges.next(), Some(NonZeroRange::new(10..=25)));
+    /// assert_eq!(ranges.next(), Some(NonZeroRange::new(30..=40)));
     /// assert_eq!(ranges.next(), None);
     /// ```
     pub fn into_ranges(self) -> MapIntoRangesIter<T, V> {
@@ -2105,13 +2126,13 @@ impl<T: Integer, V: Eq + Clone> RangeMapBlaze<T, V> {
     ///
     /// let map = RangeMapBlaze::from_iter([(10u16..=20, "a"), (15..=25, "b"), (30..=40, "c")]);
     /// let complement = map.complement_with(&"z");
-    /// assert_eq!(complement.to_string(), r#"(0..=9, "z"), (26..=29, "z"), (41..=65535, "z")"#);
+    /// assert_eq!(complement.to_string(), r#"(0..=9, "z"), (26..=29, "z"), (41..=65534, "z")"#);
     /// ```
     #[must_use]
     pub fn complement_with(&self, value: &V) -> Self {
         self.ranges()
             .complement()
-            .map(|r| (r, value.clone()))
+            .map(|r| (r.start..=r.end.sub_one(), value.clone()))
             .collect()
     }
 
@@ -2662,7 +2683,7 @@ map_unary_op!(
     ///     RangeMapBlaze::from_iter([(10u8..=20, "a"), (15..=25, "b"),
     ///                               (30..=40, "c")]);
     /// let complement = !&map;                // or `!map`
-    /// assert_eq!(complement.to_string(), "0..=9, 26..=29, 41..=255");
+    /// assert_eq!(complement.to_string(), "0..=9, 26..=29, 41..=254");
     /// ```
     "placeholder",
 
@@ -2709,11 +2730,12 @@ where
     {
         let iter = iter.into_iter();
 
-        // We gather adjacent values into ranges via UnsortedPriorityMap, but ignore the priority.
-        for priority in UnsortedPriorityMap::new(iter.map(|(r, v)| (r..=r, Rc::new(v)))) {
+        for priority in UnsortedPriorityMap::new(iter.map(|(r, v)| {
+            (unsafe { NonZeroRange::new_unchecked(r..r.add_one()) }, Rc::new(v))
+        })) {
             let (range, value) = priority.into_range_value();
             let value: V = Rc::try_unwrap(value).unwrap_or_else(|_| unreachable!());
-            self.internal_add(range, value);
+            self.internal_add(range.start..=range.end.sub_one(), value);
         }
     }
 }
@@ -2757,11 +2779,41 @@ where
     {
         let iter = iter.into_iter();
 
-        // We gather adjacent values into ranges via UnsortedPriorityMap, but ignore the priority.
-        for priority in UnsortedPriorityMap::new(iter.map(|(r, v)| (r, Rc::new(v)))) {
+        let mut max_items = alloc::vec::Vec::new();
+        for priority in UnsortedPriorityMap::new(iter.filter_map(|(r, v)| {
+            let (start, end) = r.into_inner();
+            if start <= end {
+                if let Some(end_exclusive) = end.checked_add_one() {
+                    Some((unsafe { NonZeroRange::new_unchecked(start..end_exclusive) }, Rc::new(v)))
+                } else {
+                    max_items.push((start..=T::max_value(), v));
+                    None
+                }
+            } else {
+                None
+            }
+        })) {
             let (range, value) = priority.into_range_value();
             let value = Rc::try_unwrap(value).unwrap_or_else(|_| unreachable!());
+            self.internal_add(range.start..=range.end.sub_one(), value);
+        }
+        for (range, value) in max_items {
             self.internal_add(range, value);
+        }
+    }
+}
+
+impl<T, V> Extend<(NonZeroRange<T>, V)> for RangeMapBlaze<T, V>
+where
+    T: Integer,
+    V: Eq + Clone,
+{
+    fn extend<I>(&mut self, iter: I)
+    where
+        I: IntoIterator<Item = (NonZeroRange<T>, V)>,
+    {
+        for (range, value) in iter {
+            self.internal_add(range.start..=range.end.sub_one(), value);
         }
     }
 }
@@ -2893,28 +2945,29 @@ where
                 (None, Some(_)) => return Ordering::Less,
                 (None, None) => return Ordering::Equal,
                 (Some((a_r, a_v)), Some((b_r, b_v))) => {
-                    // if tie, compare starts
-                    match a_r.start().cmp(b_r.start()) {
+                    match a_r.start.cmp(&b_r.start) {
                         Ordering::Greater => return Ordering::Greater,
                         Ordering::Less => return Ordering::Less,
                         Ordering::Equal => { /* keep going */ }
                     }
 
-                    // if tie, compare values
                     match a_v.cmp(b_v) {
                         Ordering::Less => return Ordering::Less,
                         Ordering::Greater => return Ordering::Greater,
                         Ordering::Equal => { /* keep going */ }
                     }
 
-                    // if tie, compare ends
-                    match a_r.end().cmp(b_r.end()) {
+                    match a_r.end.cmp(&b_r.end) {
                         Ordering::Less => {
                             a_rx = a.next();
-                            b_rx = Some(((*a_r.end()).add_one()..=*b_r.end(), b_v));
+                            b_rx = Some((unsafe {
+                                NonZeroRange::new_unchecked(a_r.end..b_r.end)
+                            }, b_v));
                         }
                         Ordering::Greater => {
-                            a_rx = Some(((*b_r.end()).add_one()..=*a_r.end(), a_v));
+                            a_rx = Some((unsafe {
+                                NonZeroRange::new_unchecked(b_r.end..a_r.end)
+                            }, a_v));
                             b_rx = b.next();
                         }
                         Ordering::Equal => {

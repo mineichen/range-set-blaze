@@ -280,13 +280,13 @@ where
     /// ```
     /// use range_set_blaze::prelude::*;
     ///
-    /// let a = CheckSortedDisjointMap::new(vec![(2..=2, &"a"), (6..=200, &"a")]);
-    /// let b = CheckSortedDisjointMap::new(vec![(2..=6, &"b")]);
-    /// let c = CheckSortedDisjointMap::new(vec![(1..=2, &"c"), (5..=100, &"c")]);
+    /// let a = CheckSortedDisjointMap::new(vec![(NonZeroRange::new(2..=2), &"a"), (NonZeroRange::new(6..=200), &"a")]);
+    /// let b = CheckSortedDisjointMap::new(vec![(NonZeroRange::new(2..=6), &"b")]);
+    /// let c = CheckSortedDisjointMap::new(vec![(NonZeroRange::new(1..=2), &"c"), (NonZeroRange::new(5..=100), &"c")]);
     ///
     /// let union = [a, b, c].union();
     ///
-    /// assert_eq!(union.into_string(), r#"(1..=2, "c"), (3..=4, "b"), (5..=100, "c"), (101..=200, "a")"#);
+    /// assert_eq!(union.into_string(), r#"(1..3, "c"), (3..5, "b"), (5..101, "c"), (101..201, "a")"#);
     /// ```
     fn union(self) -> UnionKMergeMap<T, VR, I> {
         UnionIterMap::new_k(self)
@@ -318,13 +318,13 @@ where
     /// ```
     /// use range_set_blaze::prelude::*;
     ///
-    /// let a = CheckSortedDisjointMap::new(vec![(2..=2, &"a"), (6..=200, &"a")]);
-    /// let b = CheckSortedDisjointMap::new(vec![(2..=6, &"b")]);
-    /// let c = CheckSortedDisjointMap::new(vec![(1..=2, &"c"), (5..=100, &"c")]);
+    /// let a = CheckSortedDisjointMap::new(vec![(NonZeroRange::new(2..=2), &"a"), (NonZeroRange::new(6..=200), &"a")]);
+    /// let b = CheckSortedDisjointMap::new(vec![(NonZeroRange::new(2..=6), &"b")]);
+    /// let c = CheckSortedDisjointMap::new(vec![(NonZeroRange::new(1..=2), &"c"), (NonZeroRange::new(5..=100), &"c")]);
     ///
     /// let intersection = [a, b, c].intersection();
     ///
-    /// assert_eq!(intersection.into_string(), r#"(2..=2, "c"), (6..=6, "c")"#);
+    /// assert_eq!(intersection.into_string(), r#"(2..3, "c"), (6..7, "c")"#);
     /// ```
     fn intersection<'a>(self) -> IntersectionKMap<'a, T, VR, I> {
         // We define map intersection -- in part -- in terms of set intersection.
@@ -351,13 +351,13 @@ where
     /// ```
     /// use range_set_blaze::prelude::*;
     ///
-    /// let a = CheckSortedDisjointMap::new(vec![(2..=2, &"a"), (6..=200, &"a")]);
-    /// let b = CheckSortedDisjointMap::new(vec![(2..=6, &"b")]);
-    /// let c = CheckSortedDisjointMap::new(vec![(1..=2, &"c"), (5..=100, &"c")]);
+    /// let a = CheckSortedDisjointMap::new(vec![(NonZeroRange::new(2..=2), &"a"), (NonZeroRange::new(6..=200), &"a")]);
+    /// let b = CheckSortedDisjointMap::new(vec![(NonZeroRange::new(2..=6), &"b")]);
+    /// let c = CheckSortedDisjointMap::new(vec![(NonZeroRange::new(1..=2), &"c"), (NonZeroRange::new(5..=100), &"c")]);
     ///
     /// let symmetric_difference = [a, b, c].symmetric_difference();
     ///
-    /// assert_eq!(symmetric_difference.into_string(), r#"(1..=2, "c"), (3..=4, "b"), (6..=6, "c"), (101..=200, "a")"#);
+    /// assert_eq!(symmetric_difference.into_string(), r#"(1..3, "c"), (3..5, "b"), (6..7, "c"), (101..201, "a")"#);
     /// ```
     fn symmetric_difference(self) -> SymDiffKMergeMap<T, VR, I> {
         SymDiffIterMap::new_k(self)

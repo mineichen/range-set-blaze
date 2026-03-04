@@ -1,9 +1,9 @@
-use core::{iter::FusedIterator, ops::RangeInclusive};
+use core::iter::FusedIterator;
 
 use alloc::collections::btree_map;
 
 use crate::{
-    Integer, SortedDisjointMap,
+    Integer, NonZeroRange, SortedDisjointMap,
     map::{EndValue, ValueRef},
 };
 
@@ -23,8 +23,8 @@ where
     I: SortedDisjointMap<T, VR>,
 {
     iter: I,
-    option_range_value_front: Option<(RangeInclusive<T>, VR)>,
-    option_range_value_back: Option<(RangeInclusive<T>, VR)>,
+    option_range_value_front: Option<(NonZeroRange<T>, VR)>,
+    option_range_value_back: Option<(NonZeroRange<T>, VR)>,
 }
 
 impl<T, VR, I> IterMap<T, VR, I>
@@ -65,11 +65,11 @@ where
             .or_else(|| self.iter.next())
             .or_else(|| self.option_range_value_back.take())?;
 
-        let (start, end) = range_value.0.into_inner();
-        debug_assert!(start <= end);
+        let (start, end) = (range_value.0.start, range_value.0.end);
+        debug_assert!(start < end);
         let value = range_value.1.clone();
-        if start < end {
-            range_value.0 = start.add_one()..=end;
+        if start.add_one() < end {
+            range_value.0 = unsafe { NonZeroRange::new_unchecked(start.add_one()..end) };
             self.option_range_value_front = Some(range_value);
         }
         Some((start, value))
@@ -95,15 +95,16 @@ where
             .take()
             .or_else(|| self.iter.next_back())
             .or_else(|| self.option_range_value_front.take())?;
-        let (start, end) = range_value.0.into_inner();
-        debug_assert!(start <= end);
+        let (start, end) = (range_value.0.start, range_value.0.end);
+        debug_assert!(start < end);
+        let inclusive_end = end.sub_one();
         let value = range_value.1.clone();
-        if start < end {
-            range_value.0 = start..=end.sub_one();
+        if start < inclusive_end {
+            range_value.0 = unsafe { NonZeroRange::new_unchecked(start..inclusive_end) };
             self.option_range_value_back = Some(range_value);
         }
 
-        Some((end, value))
+        Some((inclusive_end, value))
     }
 }
 

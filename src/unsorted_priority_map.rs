@@ -1,8 +1,7 @@
 use crate::map::ValueRef;
 use crate::range_values::ExpectDebugUnwrapRelease;
 use crate::sorted_disjoint_map::{Priority, PrioritySortedStartsMap};
-use crate::{Integer, map::EndValue, sorted_disjoint_map::SortedDisjointMap};
-use core::ops::RangeInclusive;
+use crate::{Integer, NonZeroRange, map::EndValue, sorted_disjoint_map::SortedDisjointMap};
 use core::{
     cmp::{max, min},
     iter::FusedIterator,
@@ -16,11 +15,10 @@ pub(crate) struct UnsortedPriorityMap<T, VR, I>
 where
     T: Integer,
     VR: ValueRef,
-    I: Iterator<Item = (RangeInclusive<T>, VR)>,
+    I: Iterator<Item = (NonZeroRange<T>, VR)>,
 {
     iter: I,
     option_priority: Option<Priority<T, VR>>,
-    min_value_plus_2: T,
     priority_number: usize,
 }
 
@@ -28,14 +26,13 @@ impl<T, VR, I> UnsortedPriorityMap<T, VR, I>
 where
     T: Integer,
     VR: ValueRef,
-    I: Iterator<Item = (RangeInclusive<T>, VR)>, // Any iterator is fine
+    I: Iterator<Item = (NonZeroRange<T>, VR)>,
 {
     #[inline]
     pub(crate) fn new(into_iter: I) -> Self {
         Self {
             iter: into_iter,
             option_priority: None,
-            min_value_plus_2: T::min_value().add_one().add_one(),
             priority_number: 0,
         }
     }
@@ -45,7 +42,7 @@ impl<T, VR, I> FusedIterator for UnsortedPriorityMap<T, VR, I>
 where
     T: Integer,
     VR: ValueRef,
-    I: Iterator<Item = (RangeInclusive<T>, VR)>,
+    I: Iterator<Item = (NonZeroRange<T>, VR)>,
 {
 }
 
@@ -53,13 +50,12 @@ impl<T, VR, I> Iterator for UnsortedPriorityMap<T, VR, I>
 where
     T: Integer,
     VR: ValueRef,
-    I: Iterator<Item = (RangeInclusive<T>, VR)>,
+    I: Iterator<Item = (NonZeroRange<T>, VR)>,
 {
     type Item = Priority<T, VR>;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            // Get the next range_value, if none, return the current range_value
             let Some(next_range_value) = self.iter.next() else {
                 return self.option_priority.take();
             };
@@ -69,36 +65,29 @@ where
                 .checked_add(1)
                 .expect_debug_unwrap_release("underflow");
 
-            // check the next range is valid and non-empty
             let (next_start, next_end) = next_priority.start_and_end();
-            if next_start > next_end {
+            if next_start >= next_end {
                 continue;
             }
 
-            // get the current range (if none, set the current range to the next range and loop)
             let Some(mut current_priority) = self.option_priority.take() else {
                 self.option_priority = Some(next_priority);
                 continue;
             };
 
-            // If the values are different or the ranges do not touch or overlap,
-            // return the current range and set the current range to the next range
             let (current_start, current_end) = current_priority.start_and_end();
             if current_priority.value().borrow() != next_priority.value().borrow()
-                || (next_start >= self.min_value_plus_2
-                    && current_end <= next_start.sub_one().sub_one())
-                || (current_start >= self.min_value_plus_2
-                    && next_end <= current_start.sub_one().sub_one())
+                || current_end < next_start
+                || next_end < current_start
             {
                 self.option_priority = Some(next_priority);
                 return Some(current_priority);
             }
 
-            // They touch or overlap and have the same value, so merge
-            current_priority.set_range(min(current_start, next_start)..=max(current_end, next_end));
+            current_priority.set_range(unsafe {
+                NonZeroRange::new_unchecked(min(current_start, next_start)..max(current_end, next_end))
+            });
             self.option_priority = Some(current_priority);
-
-            // return to the top of the loop
         }
     }
 
@@ -165,11 +154,12 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some((range, value)) = self.iter.next() {
-            let (start, end) = range.clone().into_inner();
-            debug_assert!(start <= end);
-            self.len += T::safe_len(&range);
+            let (start, end) = (range.start, range.end);
+            debug_assert!(start < end);
+            let inclusive_end = end.sub_one();
+            self.len += T::safe_len(&(start..=inclusive_end));
             let end_value = EndValue {
-                end,
+                end: inclusive_end,
                 value: value.into_value(),
             };
             Some((start, end_value))

@@ -1,7 +1,7 @@
 use alloc::rc::Rc;
 
 use crate::union_iter_map::UnionIterMap;
-use crate::{Integer, RangeMapBlaze};
+use crate::{Integer, NonZeroRange, RangeMapBlaze};
 use core::ops::RangeInclusive;
 
 // We create a RangeMapBlaze from an iterator of integers or integer ranges by
@@ -62,8 +62,52 @@ where
     where
         I: IntoIterator<Item = (RangeInclusive<T>, &'a V)>,
     {
-        let iter = iter.into_iter();
+        let mut max_items = alloc::vec::Vec::new();
+        let iter = iter.into_iter().filter_map(|(r, v)| {
+            let (start, end) = r.into_inner();
+            if start <= end {
+                if let Some(end_exclusive) = end.checked_add_one() {
+                    Some((unsafe { NonZeroRange::new_unchecked(start..end_exclusive) }, v))
+                } else {
+                    max_items.push((start..=T::max_value(), v.clone()));
+                    None
+                }
+            } else {
+                None
+            }
+        });
         let union_iter_map: UnionIterMap<T, &V, _> = iter.collect();
+        let mut result = Self::from_sorted_disjoint_map(union_iter_map);
+        for (range, value) in max_items {
+            result.internal_add(range, value);
+        }
+        result
+    }
+}
+
+impl<'a, T, V> FromIterator<(NonZeroRange<T>, &'a V)> for RangeMapBlaze<T, V>
+where
+    T: Integer,
+    V: Eq + Clone,
+{
+    fn from_iter<I>(iter: I) -> Self
+    where
+        I: IntoIterator<Item = (NonZeroRange<T>, &'a V)>,
+    {
+        let union_iter_map: UnionIterMap<T, &V, _> = iter.into_iter().collect();
+        Self::from_sorted_disjoint_map(union_iter_map)
+    }
+}
+
+impl<T: Integer, V: Eq + Clone> FromIterator<(NonZeroRange<T>, V)> for RangeMapBlaze<T, V> {
+    fn from_iter<I>(iter: I) -> Self
+    where
+        I: IntoIterator<Item = (NonZeroRange<T>, V)>,
+    {
+        let union_iter_map = iter
+            .into_iter()
+            .map(|(r, v)| (r, Rc::new(v)))
+            .collect::<UnionIterMap<T, Rc<V>, _>>();
         Self::from_sorted_disjoint_map(union_iter_map)
     }
 }
@@ -91,11 +135,28 @@ impl<T: Integer, V: Eq + Clone> FromIterator<(RangeInclusive<T>, V)> for RangeMa
     where
         I: IntoIterator<Item = (RangeInclusive<T>, V)>,
     {
+        let mut max_items = alloc::vec::Vec::new();
         let union_iter_map = iter
             .into_iter()
-            .map(|(r, v)| (r, Rc::new(v)))
+            .filter_map(|(r, v)| {
+                let (start, end) = r.into_inner();
+                if start <= end {
+                    if let Some(end_exclusive) = end.checked_add_one() {
+                        Some((unsafe { NonZeroRange::new_unchecked(start..end_exclusive) }, Rc::new(v)))
+                    } else {
+                        max_items.push((start..=T::max_value(), v));
+                        None
+                    }
+                } else {
+                    None
+                }
+            })
             .collect::<UnionIterMap<T, Rc<V>, _>>();
-        Self::from_sorted_disjoint_map(union_iter_map)
+        let mut result = Self::from_sorted_disjoint_map(union_iter_map);
+        for (range, value) in max_items {
+            result.internal_add(range, value);
+        }
+        result
     }
 }
 

@@ -4,8 +4,8 @@ use crate::unsorted_disjoint::UnsortedDisjoint;
 use crate::{AssumeSortedStarts, Merge, SortedDisjoint, SortedStarts, UnionKMerge};
 use crate::{Integer, UnionMerge};
 use core::cmp::max;
+use crate::NonZeroRange;
 use core::iter::FusedIterator;
-use core::ops::RangeInclusive;
 use itertools::Itertools;
 
 /// This `struct` is created by the [`union`] method on [`SortedStarts`]. See [`union`]'s
@@ -21,7 +21,7 @@ where
     SS: SortedStarts<T>,
 {
     iter: SS,
-    option_range: Option<RangeInclusive<T>>,
+    option_range: Option<NonZeroRange<T>>,
 }
 
 impl<T, I> Iterator for UnionIter<T, I>
@@ -29,33 +29,33 @@ where
     T: Integer,
     I: SortedStarts<T>,
 {
-    type Item = RangeInclusive<T>;
+    type Item = NonZeroRange<T>;
 
-    fn next(&mut self) -> Option<RangeInclusive<T>> {
+    fn next(&mut self) -> Option<NonZeroRange<T>> {
         loop {
             let Some(range) = self.iter.next() else {
                 return self.option_range.take();
             };
 
-            let (start, end) = range.into_inner();
-            debug_assert!(start <= end); // real assert
+            let (start, end) = (range.start, range.end);
+            debug_assert!(start < end); // real assert
 
             let Some(current_range) = self.option_range.take() else {
-                self.option_range = Some(start..=end);
+                self.option_range = Some(range);
                 continue;
             };
 
-            let (current_start, current_end) = current_range.into_inner();
+            let (current_start, current_end) = (current_range.start, current_range.end);
             debug_assert!(current_start <= start); // real assert
-            if start <= current_end
-                || (current_end < T::max_value() && start <= current_end.add_one())
-            {
-                self.option_range = Some(current_start..=max(current_end, end));
+            if start <= current_end {
+                self.option_range = Some(unsafe {
+                    NonZeroRange::new_unchecked(current_start..max(current_end, end))
+                });
                 continue;
             }
 
-            self.option_range = Some(start..=end);
-            return Some(current_start..=current_end);
+            self.option_range = Some(range);
+            return Some(current_range);
         }
     }
 }
@@ -103,17 +103,17 @@ where
 }
 
 // from iter (T, VR) to UnionIter
-impl<T> FromIterator<RangeInclusive<T>> for UnionIter<T, SortedStartsInVec<T>>
+impl<T> FromIterator<NonZeroRange<T>> for UnionIter<T, SortedStartsInVec<T>>
 where
     T: Integer,
 {
     fn from_iter<I>(iter: I) -> Self
     where
-        I: IntoIterator<Item = RangeInclusive<T>>,
+        I: IntoIterator<Item = NonZeroRange<T>>,
     {
         let iter = iter.into_iter();
         let iter = UnsortedDisjoint::new(iter);
-        let iter = iter.sorted_by(|a, b| a.start().cmp(b.start()));
+        let iter = iter.sorted_by(|a, b| a.start.cmp(&b.start));
         let iter = AssumeSortedStarts::new(iter);
         Self::new(iter)
     }

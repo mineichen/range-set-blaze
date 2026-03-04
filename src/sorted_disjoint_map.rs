@@ -23,11 +23,11 @@ use core::fmt::Debug;
 use core::iter::FusedIterator;
 use core::marker::PhantomData;
 use core::ops;
-use core::ops::RangeInclusive;
+use crate::NonZeroRange;
 
 /// Used internally. Marks iterators that provide `(range, value)` pairs that are sorted by the range's start, but
 /// that are not necessarily disjoint.
-pub trait SortedStartsMap<T, VR>: Iterator<Item = (RangeInclusive<T>, VR)> + FusedIterator
+pub trait SortedStartsMap<T, VR>: Iterator<Item = (NonZeroRange<T>, VR)> + FusedIterator
 where
     T: Integer,
     VR: ValueRef,
@@ -35,7 +35,7 @@ where
 }
 
 /// Used internally by [`UnionIterMap`] and [`SymDiffIterMap`].
-pub trait PrioritySortedStartsMap<T, VR>: Iterator<Item = Priority<T, VR>> + FusedIterator
+pub trait PrioritySortedStartsMap<T, VR>: Iterator<Item = Priority<T, VR>> + FusedIterator // Priority now contains NonZeroRange
 where
     T: Integer,
     VR: ValueRef,
@@ -81,14 +81,14 @@ where
 /// // RangeMapBlaze's .range_values(), and .into_range_values()
 /// let r = RangeMapBlaze::from_iter([ (100, "b"), (1, "c"), (3, "a"), (2, "a"), (1, "a")]);
 /// let a = r.range_values();
-/// assert_eq!(a.into_string(), r#"(1..=3, "a"), (100..=100, "b")"#);
+/// assert_eq!(a.into_string(), r#"(1..4, "a"), (100..101, "b")"#);
 /// // 'into_range_values' takes ownership of the 'RangeMapBlaze'
 /// let a = r.into_range_values();
-/// assert_eq!(a.into_string(), r#"(1..=3, "a"), (100..=100, "b")"#);
+/// assert_eq!(a.into_string(), r#"(1..4, "a"), (100..101, "b")"#);
 ///
 /// // CheckSortedDisjointMap -- unsorted or overlapping input ranges will cause a panic.
-/// let a = CheckSortedDisjointMap::new([(1..=3, &"a"), (100..=100, &"b")]);
-/// assert_eq!(a.into_string(), r#"(1..=3, "a"), (100..=100, "b")"#);
+/// let a = CheckSortedDisjointMap::new([(NonZeroRange::new(1..=3), &"a"), (NonZeroRange::new(100..=100), &"b")]);
+/// assert_eq!(a.into_string(), r#"(1..4, "a"), (100..101, "b")"#);
 /// ```
 ///
 /// # `SortedDisjointMap` Set Operations
@@ -149,30 +149,30 @@ where
 /// // 'union' method and 'into_string' method
 /// let (a, b) = (a0.range_values(), b0.range_values());
 /// let result = a.union(b);
-/// assert_eq!(result.into_string(), r#"(1..=2, "b"), (3..=4, "a"), (5..=100, "b")"#);
+/// assert_eq!(result.into_string(), r#"(1..3, "b"), (3..5, "a"), (5..101, "b")"#);
 ///
 /// // '|' operator and 'equal' method
 /// let (a, b) = (a0.range_values(), b0.range_values());
 /// let result = a | b;
-/// assert!(result.equal(CheckSortedDisjointMap::new([(1..=2, &"b"),  (3..=4, &"a"), (5..=100, &"b")])));
+/// assert!(result.equal(CheckSortedDisjointMap::new([(NonZeroRange::new(1..=2), &"b"),  (NonZeroRange::new(3..=4), &"a"), (NonZeroRange::new(5..=100), &"b")])));
 ///
 /// // multiway union of same type
 /// let z0 = RangeMapBlaze::from_iter([(2..=2, "z"), (6..=200, "z")]);
 /// let (z, a, b) = (z0.range_values(), a0.range_values(), b0.range_values());
 /// let result = [z, a, b].union();
-/// assert_eq!(result.into_string(), r#"(1..=2, "b"), (3..=4, "a"), (5..=100, "b"), (101..=200, "z")"#
+/// assert_eq!(result.into_string(), r#"(1..3, "b"), (3..5, "a"), (5..101, "b"), (101..201, "z")"#
 /// );
 ///
 /// // multiway union of different types
 /// let (a, b) = (a0.range_values(), b0.range_values());
-/// let z = CheckSortedDisjointMap::new([(2..=2, &"z"), (6..=200, &"z")]);
+/// let z = CheckSortedDisjointMap::new([(NonZeroRange::new(2..=2), &"z"), (NonZeroRange::new(6..=200), &"z")]);
 /// let result = union_map_dyn!(z, a, b);
-/// assert_eq!(result.into_string(), r#"(1..=2, "b"), (3..=4, "a"), (5..=100, "b"), (101..=200, "z")"# );
+/// assert_eq!(result.into_string(), r#"(1..3, "b"), (3..5, "a"), (5..101, "b"), (101..201, "z")"# );
 ///
 /// // Applying multiple operators makes only one pass through the inputs with minimal memory.
 /// let (z, a, b) = (z0.range_values(), a0.range_values(), b0.range_values());
 /// let result = b - (z | a);
-/// assert_eq!(result.into_string(), r#"(1..=1, "b")"#);
+/// assert_eq!(result.into_string(), r#"(1..2, "b")"#);
 /// ```
 /// # How to mark your type as `SortedDisjointMap`
 ///
@@ -196,9 +196,9 @@ where
     ///```
     /// use range_set_blaze::prelude::*;
     ///
-    /// let a = CheckSortedDisjointMap::new([(1..=3, &"a"), (100..=100, &"b")]);
+    /// let a = CheckSortedDisjointMap::new([(NonZeroRange::new(1..=3), &"a"), (NonZeroRange::new(100..=100), &"b")]);
     /// let b = a.into_sorted_disjoint();
-    /// assert!(b.into_string() == "1..=3, 100..=100");
+    /// assert!(b.into_string() == "1..4, 100..101");
     /// ```
     #[inline]
     fn into_sorted_disjoint(self) -> RangeValuesToRangesIter<T, VR, Self>
@@ -218,16 +218,16 @@ where
     ///
     /// let a0 = RangeMapBlaze::from_iter([(2..=3, "a")]);
     /// let a = a0.range_values();
-    /// let b = CheckSortedDisjointMap::new([(1..=2, &"b")]);
+    /// let b = CheckSortedDisjointMap::new([(NonZeroRange::new(1..=2), &"b")]);
     /// let union = a.union(b);
-    /// assert_eq!(union.into_string(), r#"(1..=2, "b"), (3..=3, "a")"#);
+    /// assert_eq!(union.into_string(), r#"(1..3, "b"), (3..4, "a")"#);
     ///
     /// // Alternatively, we can use "|" because CheckSortedDisjointMap defines
     /// // ops::bitor as SortedDisjointMap::union.
     /// let a = a0.range_values();
-    /// let b = CheckSortedDisjointMap::new([(1..=2, &"b")]);
+    /// let b = CheckSortedDisjointMap::new([(NonZeroRange::new(1..=2), &"b")]);
     /// let union = a | b;
-    /// assert_eq!(union.into_string(), r#"(1..=2, "b"), (3..=3, "a")"#);
+    /// assert_eq!(union.into_string(), r#"(1..3, "b"), (3..4, "a")"#);
     /// ```
     #[inline]
     fn union<R>(self, other: R) -> UnionMergeMap<T, VR, Self, R::IntoIter>
@@ -250,17 +250,17 @@ where
     ///
     /// let a0 = RangeMapBlaze::from_iter([(2..=3, "a")]);
     /// let a = a0.range_values();
-    /// let b = CheckSortedDisjointMap::new([(1..=2, &"b")]);
+    /// let b = CheckSortedDisjointMap::new([(NonZeroRange::new(1..=2), &"b")]);
     /// let intersection = a.intersection(b);
-    /// assert_eq!(intersection.into_string(), r#"(2..=2, "b")"#);
+    /// assert_eq!(intersection.into_string(), r#"(2..3, "b")"#);
     ///
     /// // Alternatively, we can use "&" because CheckSortedDisjointMap defines
     /// // `ops::BitAnd` as `SortedDisjointMap::intersection`.
     /// let a0 = RangeMapBlaze::from_iter([(2..=3, "a")]);
     /// let a = a0.range_values();
-    /// let b = CheckSortedDisjointMap::new([(1..=2, &"b")]);
+    /// let b = CheckSortedDisjointMap::new([(NonZeroRange::new(1..=2), &"b")]);
     /// let intersection = a & b;
-    /// assert_eq!(intersection.into_string(), r#"(2..=2, "b")"#);
+    /// assert_eq!(intersection.into_string(), r#"(2..3, "b")"#);
     /// ```
     #[inline]
     fn intersection<R>(self, other: R) -> IntersectionMap<T, VR, Self, R::IntoIter>
@@ -285,15 +285,15 @@ where
     /// ```
     /// use range_set_blaze::prelude::*;
     ///
-    /// let a = CheckSortedDisjointMap::new([(1..=2, &"a")]);
-    /// let b = CheckSortedDisjoint::new([2..=3]);
+    /// let a = CheckSortedDisjointMap::new([(NonZeroRange::new(1..=2), &"a")]);
+    /// let b = CheckSortedDisjoint::new([NonZeroRange::new(2..=3)]);
     /// let intersection = a.map_and_set_intersection(b);
-    /// assert_eq!(intersection.into_string(), r#"(2..=2, "a")"#);
+    /// assert_eq!(intersection.into_string(), r#"(2..3, "a")"#);
     /// ```
     #[inline]
     fn map_and_set_intersection<R>(self, other: R) -> IntersectionIterMap<T, VR, Self, R::IntoIter>
     where
-        R: IntoIterator<Item = RangeInclusive<T>>,
+        R: IntoIterator<Item = NonZeroRange<T>>,
         R::IntoIter: SortedDisjoint<T>,
         Self: Sized,
     {
@@ -309,18 +309,18 @@ where
     /// ```
     /// use range_set_blaze::prelude::*;
     ///
-    /// let a = CheckSortedDisjointMap::new([(1..=2, &"a")]);
+    /// let a = CheckSortedDisjointMap::new([(NonZeroRange::new(1..=2), &"a")]);
     /// let b0 = RangeMapBlaze::from_iter([(2..=3, "b")]);
     /// let b = b0.range_values();
     /// let difference = a.difference(b);
-    /// assert_eq!(difference.into_string(), r#"(1..=1, "a")"#);
+    /// assert_eq!(difference.into_string(), r#"(1..2, "a")"#);
     ///
     /// // Alternatively, we can use "-" because `CheckSortedDisjointMap` defines
     /// // `ops::Sub` as `SortedDisjointMap::difference`.
-    /// let a = CheckSortedDisjointMap::new([(1..=2, &"a")]);
+    /// let a = CheckSortedDisjointMap::new([(NonZeroRange::new(1..=2), &"a")]);
     /// let b = b0.range_values();
     /// let difference = a - b;
-    /// assert_eq!(difference.into_string(), r#"(1..=1, "a")"#);
+    /// assert_eq!(difference.into_string(), r#"(1..2, "a")"#);
     /// ```
     #[inline]
     fn difference<R>(self, other: R) -> DifferenceMap<T, VR, Self, R::IntoIter>
@@ -345,15 +345,15 @@ where
     /// ```
     /// use range_set_blaze::prelude::*;
     ///
-    /// let a = CheckSortedDisjointMap::new([(1..=2, &"a")]);
+    /// let a = CheckSortedDisjointMap::new([(NonZeroRange::new(1..=2), &"a")]);
     /// let b = RangeMapBlaze::from_iter([(2..=3, "b")]).into_ranges();
     /// let difference = a.map_and_set_difference(b);
-    /// assert_eq!(difference.into_string(), r#"(1..=1, "a")"#);
+    /// assert_eq!(difference.into_string(), r#"(1..2, "a")"#);
     /// ```
     #[inline]
     fn map_and_set_difference<R>(self, other: R) -> DifferenceMapInternal<T, VR, Self, R::IntoIter>
     where
-        R: IntoIterator<Item = RangeInclusive<T>>,
+        R: IntoIterator<Item = NonZeroRange<T>>,
         R::IntoIter: SortedDisjoint<T>,
         Self: Sized,
     {
@@ -372,15 +372,15 @@ where
     /// ```
     /// use range_set_blaze::prelude::*;
     ///
-    /// let a = CheckSortedDisjointMap::new([(10_u8..=20, &"a"), (100..=200, &"b")]);
+    /// let a = CheckSortedDisjointMap::new([(NonZeroRange::new(10_u8..=20), &"a"), (NonZeroRange::new(100..=200), &"b")]);
     /// let complement = a.complement();
-    /// assert_eq!(complement.into_string(), "0..=9, 21..=99, 201..=255");
+    /// assert_eq!(complement.into_string(), "0..10, 21..100, 201..255");
     ///
     /// // Alternatively, we can use "!" because `CheckSortedDisjointMap` implements
     /// // `ops::Not` as `complement`.
-    /// let a = CheckSortedDisjointMap::new([(10_u8..=20, &"a"), (100..=200, &"b")]);
+    /// let a = CheckSortedDisjointMap::new([(NonZeroRange::new(10_u8..=20), &"a"), (NonZeroRange::new(100..=200), &"b")]);
     /// let complement_using_not = !a;
-    /// assert_eq!(complement_using_not.into_string(), "0..=9, 21..=99, 201..=255");
+    /// assert_eq!(complement_using_not.into_string(), "0..10, 21..100, 201..255");
     /// ```
     #[inline]
     fn complement(self) -> NotIter<T, RangeValuesToRangesIter<T, VR, Self>>
@@ -401,9 +401,9 @@ where
     /// ```
     /// use range_set_blaze::prelude::*;
     ///
-    /// let a = CheckSortedDisjointMap::new([(10_u8..=20, &"a"), (100..=200, &"b")]);
+    /// let a = CheckSortedDisjointMap::new([(NonZeroRange::new(10_u8..=20), &"a"), (NonZeroRange::new(100..=200), &"b")]);
     /// let complement = a.complement_with(&"z");
-    /// assert_eq!(complement.into_string(), r#"(0..=9, "z"), (21..=99, "z"), (201..=255, "z")"#);
+    /// assert_eq!(complement.into_string(), r#"(0..10, "z"), (21..100, "z"), (201..255, "z")"#);
     /// ```
     #[inline]
     fn complement_with(
@@ -427,18 +427,18 @@ where
     /// ```
     /// use range_set_blaze::prelude::*;
     ///
-    /// let a = CheckSortedDisjointMap::new([(1..=2, &"a")]);
+    /// let a = CheckSortedDisjointMap::new([(NonZeroRange::new(1..=2), &"a")]);
     /// let b0 = RangeMapBlaze::from_iter([(2..=3, "b")]);
     /// let b = b0.range_values();
     /// let symmetric_difference = a.symmetric_difference(b);
-    /// assert_eq!(symmetric_difference.into_string(), r#"(1..=1, "a"), (3..=3, "b")"#);
+    /// assert_eq!(symmetric_difference.into_string(), r#"(1..2, "a"), (3..4, "b")"#);
     ///
     /// // Alternatively, we can use "^" because CheckSortedDisjointMap defines
     /// // ops::bitxor as SortedDisjointMap::symmetric_difference.
-    /// let a = CheckSortedDisjointMap::new([(1..=2, &"a")]);
+    /// let a = CheckSortedDisjointMap::new([(NonZeroRange::new(1..=2), &"a")]);
     /// let b = b0.range_values();
     /// let symmetric_difference = a ^ b;
-    /// assert_eq!(symmetric_difference.into_string(), r#"(1..=1, "a"), (3..=3, "b")"#);
+    /// assert_eq!(symmetric_difference.into_string(), r#"(1..2, "a"), (3..4, "b")"#);
     /// ```
     #[inline]
     fn symmetric_difference<R>(self, other: R) -> SymDiffMergeMap<T, VR, Self, R::IntoIter>
@@ -461,7 +461,7 @@ where
     /// ```
     /// use range_set_blaze::prelude::*;
     ///
-    /// let a = CheckSortedDisjointMap::new([(1..=2, &"a")]);
+    /// let a = CheckSortedDisjointMap::new([(NonZeroRange::new(1..=2), &"a")]);
     /// let b0 = RangeMapBlaze::from_iter([(1..=2, "a")]);
     /// let b = b0.range_values();
     /// assert!(a.equal(b));
@@ -497,7 +497,7 @@ where
     /// ```
     /// use range_set_blaze::prelude::*;
     ///
-    /// let a = CheckSortedDisjointMap::new([(1..=2, &"a")]);
+    /// let a = CheckSortedDisjointMap::new([(NonZeroRange::new(1..=2), &"a")]);
     /// assert!(!a.is_empty());
     /// ```
     #[inline]
@@ -519,10 +519,10 @@ where
     /// ```
     /// use range_set_blaze::prelude::*;
     ///
-    /// let b = CheckSortedDisjointMap::new([(0_u8..=100, &"x"), (101..=255, &"y")]);
-    /// assert!(b.is_universal());
+    /// let b = CheckSortedDisjointMap::new([(NonZeroRange::new(0_i32..=100), &"x"), (NonZeroRange::new(102..=200), &"y")]);
+    /// assert!(!b.is_universal());
     ///
-    /// let c = CheckSortedDisjointMap::new([(1_u8..=255, &"z")]);
+    /// let c = CheckSortedDisjointMap::new([(NonZeroRange::new(1_i32..=255), &"z")]);
     /// assert!(!c.is_universal());
     /// ```
     #[inline]
@@ -534,23 +534,17 @@ where
         let mut expected_start = T::min_value();
 
         for (range, _) in self {
-            let (start, end) = range.into_inner();
-
-            // Check if this range starts where we expect
-            if start != expected_start {
+            if range.start != expected_start {
                 return false;
             }
 
-            // If this range reaches the maximum value, we're done
-            if end == T::max_value() {
+            if T::max_value().checked_add_one().is_some_and(|m| range.end == m) {
                 return true;
             }
 
-            // Set up for the next range
-            expected_start = end.add_one();
+            expected_start = range.end;
         }
 
-        // If we get here, we didn't reach the maximum value
         false
     }
 
@@ -564,8 +558,8 @@ where
     /// ```
     /// use range_set_blaze::prelude::*;
     ///
-    /// let a0 = RangeMapBlaze::from_sorted_disjoint_map(CheckSortedDisjointMap::new([(-10..=-5, &"a"), (1..=2, &"b")]));
-    /// let a1: RangeMapBlaze<i32,_> = CheckSortedDisjointMap::new([(-10..=-5, &"a"), (1..=2, &"b")]).into_range_map_blaze();
+    /// let a0 = RangeMapBlaze::from_sorted_disjoint_map(CheckSortedDisjointMap::new([(NonZeroRange::new(-10..=-5), &"a"), (NonZeroRange::new(1..=2), &"b")]));
+    /// let a1: RangeMapBlaze<i32,_> = CheckSortedDisjointMap::new([(NonZeroRange::new(-10..=-5), &"a"), (NonZeroRange::new(1..=2), &"b")]).into_range_map_blaze();
     /// assert!(a0 == a1 && a0.to_string() == r#"(-10..=-5, "a"), (1..=2, "b")"#);
     /// ```
     fn into_range_map_blaze(self) -> RangeMapBlaze<T, VR::Target>
@@ -611,18 +605,18 @@ where
 /// ```
 /// use range_set_blaze::prelude::*;
 ///
-/// let a = CheckSortedDisjointMap::new([(4..=6, &"a")]);
-/// let b = CheckSortedDisjointMap::new([(1..=3, &"z"), (5..=10, &"b")]);
+/// let a = CheckSortedDisjointMap::new([(NonZeroRange::new(4..=6), &"a")]);
+/// let b = CheckSortedDisjointMap::new([(NonZeroRange::new(1..=3), &"z"), (NonZeroRange::new(5..=10), &"b")]);
 /// let union = a | b;
-/// assert_eq!(union.into_string(), r#"(1..=3, "z"), (4..=4, "a"), (5..=10, "b")"#);
+/// assert_eq!(union.into_string(), r#"(1..4, "z"), (4..5, "a"), (5..11, "b")"#);
 /// ```
 ///
 /// Here the ranges are not sorted and disjoint, so the iterator will panic.
 /// ```should_panic
 /// use range_set_blaze::prelude::*;
 ///
-/// let a = CheckSortedDisjointMap::new([(1..=3, &"a"), (5..=10, &"b")]);
-/// let b = CheckSortedDisjointMap::new([(4..=6, &"c"), (-10..=12, &"d")]);
+/// let a = CheckSortedDisjointMap::new([(NonZeroRange::new(1..=3), &"a"), (NonZeroRange::new(5..=10), &"b")]);
+/// let b = CheckSortedDisjointMap::new([(NonZeroRange::new(4..=6), &"c"), (NonZeroRange::new(-10..=12), &"d")]);
 /// let union = a | b;
 /// assert_eq!(union.into_string(), "1..=3 -> a, 5..=10 -> b");
 /// ```
@@ -633,26 +627,24 @@ pub struct CheckSortedDisjointMap<T, VR, I>
 where
     T: Integer,
     VR: ValueRef,
-    I: Iterator<Item = (RangeInclusive<T>, VR)>,
+    I: Iterator<Item = (NonZeroRange<T>, VR)>,
 {
     iter: I,
     seen_none: bool,
-    previous: Option<(RangeInclusive<T>, VR)>,
+    previous: Option<(NonZeroRange<T>, VR)>,
 }
 
-// define new
 impl<T, VR, I> CheckSortedDisjointMap<T, VR, I>
 where
     T: Integer,
     VR: ValueRef,
-    I: Iterator<Item = (RangeInclusive<T>, VR)>,
+    I: Iterator<Item = (NonZeroRange<T>, VR)>,
 {
-    /// Creates a new [`CheckSortedDisjointMap`] from an iterator of ranges and values. See [`CheckSortedDisjointMap`] for details and examples.
     #[inline]
     #[must_use = "iterators are lazy and do nothing unless consumed"]
     pub fn new<J>(iter: J) -> Self
     where
-        J: IntoIterator<Item = (RangeInclusive<T>, VR), IntoIter = I>,
+        J: IntoIterator<Item = (NonZeroRange<T>, VR), IntoIter = I>,
     {
         Self {
             iter: iter.into_iter(),
@@ -666,10 +658,9 @@ impl<T, VR, I> Default for CheckSortedDisjointMap<T, VR, I>
 where
     T: Integer,
     VR: ValueRef,
-    I: Iterator<Item = (RangeInclusive<T>, VR)> + Default,
+    I: Iterator<Item = (NonZeroRange<T>, VR)> + Default,
 {
     fn default() -> Self {
-        // Utilize I::default() to satisfy the iterator requirement.
         Self::new(I::default())
     }
 }
@@ -678,66 +669,59 @@ impl<T, VR, I> FusedIterator for CheckSortedDisjointMap<T, VR, I>
 where
     T: Integer,
     VR: ValueRef,
-    I: Iterator<Item = (RangeInclusive<T>, VR)>,
+    I: Iterator<Item = (NonZeroRange<T>, VR)>,
 {
 }
 
-fn range_value_clone<T, VR>(range_value: &(RangeInclusive<T>, VR)) -> (RangeInclusive<T>, VR)
+fn range_value_clone<T, VR>(range_value: &(NonZeroRange<T>, VR)) -> (NonZeroRange<T>, VR)
 where
     T: Integer,
     VR: ValueRef,
 {
     let (range, value) = range_value;
-    (range.clone(), value.clone())
+    (*range, value.clone())
 }
 
 impl<T, VR, I> Iterator for CheckSortedDisjointMap<T, VR, I>
 where
     T: Integer,
     VR: ValueRef,
-    I: Iterator<Item = (RangeInclusive<T>, VR)>,
+    I: Iterator<Item = (NonZeroRange<T>, VR)>,
 {
-    type Item = (RangeInclusive<T>, VR);
+    type Item = (NonZeroRange<T>, VR);
 
-    #[allow(clippy::manual_assert)] // We use "if...panic!" for coverage auditing.
+    #[allow(clippy::manual_assert)]
     fn next(&mut self) -> Option<Self::Item> {
-        // Get the next item
         let range_value = self.iter.next();
 
-        // If it's None, we're done (but remember that we've seen None)
         let Some(range_value) = range_value else {
             self.seen_none = true;
             return None;
         };
 
-        // if the next item is Some, check that we haven't seen None before
         if self.seen_none {
             panic!("a value must not be returned after None")
         }
 
-        // Check that the range is not empty
-        let (start, end) = range_value.0.clone().into_inner();
-        if start > end {
-            panic!("start must be <= end")
+        let (start, end) = (range_value.0.start, range_value.0.end);
+        if start >= end {
+            panic!("start must be < end")
         }
 
-        // If previous is None, we're done (but remember this pair as previous)
         let Some(previous) = self.previous.take() else {
             self.previous = Some(range_value_clone(&range_value));
             return Some(range_value);
         };
 
-        // The next_item is Some and previous is Some, so check that the ranges are disjoint and sorted
-        let previous_end = *previous.0.end();
-        if previous_end >= start {
+        let previous_end = previous.0.end;
+        if previous_end > start {
             panic!("ranges must be disjoint and sorted")
         }
 
-        if previous_end.add_one() == start && previous.1.borrow() == range_value.1.borrow() {
+        if previous_end == start && previous.1.borrow() == range_value.1.borrow() {
             panic!("touching ranges must have different values")
         }
 
-        // Remember this pair as previous
         self.previous = Some(range_value_clone(&range_value));
         Some(range_value)
     }
@@ -754,7 +738,7 @@ where
     T: Integer,
     VR: ValueRef,
 {
-    range_value: (RangeInclusive<T>, VR),
+    range_value: (NonZeroRange<T>, VR),
     priority_number: usize,
 }
 
@@ -763,7 +747,7 @@ where
     T: Integer,
     VR: ValueRef,
 {
-    pub(crate) const fn new(range_value: (RangeInclusive<T>, VR), priority_number: usize) -> Self {
+    pub(crate) const fn new(range_value: (NonZeroRange<T>, VR), priority_number: usize) -> Self {
         Self {
             range_value,
             priority_number,
@@ -776,37 +760,30 @@ where
     T: Integer,
     VR: ValueRef,
 {
-    /// Returns a reference to `range_value`.
-    pub const fn range_value(&self) -> &(RangeInclusive<T>, VR) {
+    pub const fn range_value(&self) -> &(NonZeroRange<T>, VR) {
         &self.range_value
     }
 
-    /// Consumes `Priority` and returns `range_value`.
-    pub fn into_range_value(self) -> (RangeInclusive<T>, VR) {
+    pub fn into_range_value(self) -> (NonZeroRange<T>, VR) {
         self.range_value
     }
 
-    /// Updates the range part of `range_value`.
-    pub const fn set_range(&mut self, range: RangeInclusive<T>) {
+    pub fn set_range(&mut self, range: NonZeroRange<T>) {
         self.range_value.0 = range;
     }
 
-    /// Returns the start of the range.
-    pub const fn start(&self) -> T {
-        *self.range_value.0.start()
+    pub fn start(&self) -> T {
+        self.range_value.0.start
     }
 
-    /// Returns the end of the range.
-    pub const fn end(&self) -> T {
-        *self.range_value.0.end()
+    pub fn end(&self) -> T {
+        self.range_value.0.end
     }
 
-    /// Returns the start and end of the range. (Assuming direct access to start and end)
-    pub const fn start_and_end(&self) -> (T, T) {
-        ((*self.range_value.0.start()), (*self.range_value.0.end()))
+    pub fn start_and_end(&self) -> (T, T) {
+        (self.range_value.0.start, self.range_value.0.end)
     }
 
-    /// Returns a reference to the value part of `range_value`.
     pub const fn value(&self) -> &VR {
         &self.range_value.1
     }
@@ -901,7 +878,7 @@ where
     V: Eq + Clone,
     I: SortedDisjoint<T>,
 {
-    type Item = (RangeInclusive<T>, &'a V);
+    type Item = (NonZeroRange<T>, &'a V);
 
     fn next(&mut self) -> Option<Self::Item> {
         self.inner.next().map(|range| (range, self.value))
@@ -1015,7 +992,7 @@ macro_rules! impl_sorted_map_traits_and_ops {
 }
 
 // CheckList: Be sure that these are all tested in 'test_every_sorted_disjoint_map_method'
-impl_sorted_map_traits_and_ops!(CheckSortedDisjointMap<T, VR, I>, VR::Value, VR, VR: ValueRef, I: Iterator<Item = (RangeInclusive<T>,  VR)>);
+impl_sorted_map_traits_and_ops!(CheckSortedDisjointMap<T, VR, I>, VR::Value, VR, VR: ValueRef, I: Iterator<Item = (NonZeroRange<T>,  VR)>);
 impl_sorted_map_traits_and_ops!(DynSortedDisjointMap<'a, T, VR>, VR::Value, VR, 'a, VR: ValueRef);
 impl_sorted_map_traits_and_ops!(IntersectionIterMap<T, VR, I0, I1>,  VR::Value, VR, VR: ValueRef, I0: SortedDisjointMap<T, VR>, I1: SortedDisjoint<T>);
 impl_sorted_map_traits_and_ops!(IntoRangeValuesIter<T, V>, V, Rc<V>, V: Eq + Clone);
